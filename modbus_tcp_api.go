@@ -2,12 +2,14 @@ package libmodbusgo
 
 /*
 #cgo CFLAGS: -I${SRCDIR}
-#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib -lmodbus -Wl,-rpath=/usr/local/lib
+#cgo linux,amd64 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib/libmodbus.a
 #include <stdlib.h>
 #include "modbus.h"
 */
 import "C"
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // ModbusNewTcp modbus_new_tcp - create a libmodbus context for TCP/IPv4
 //
@@ -30,15 +32,15 @@ func ModbusNewTcp(addr string, port int) *Modbus {
 	return &Modbus{ctx: ctx}
 }
 
-// ModbusTcpListen modbus_tcp_listen - create and listen a TCP Modbus socket (IPv4)
+// TcpListen modbus_tcp_listen - create and listen a TCP Modbus socket (IPv4)
 //
 // The modbus_tcp_listen() function shall create a socket and listen to maximum nb_connection incoming connections on
 // the specified IP address. The context ctx must be allocated and initialized with modbus_new_tcp before to set the IP
 // address to listen, if IP address is set to NULL or '0.0.0.0', any addresses will be listen.
-func (x *Modbus) ModbusTcpListen(nb int) (socket int, err error) {
+func (x *Modbus) TcpListen(nb int) (socket int, err error) {
 	code := C.modbus_tcp_listen(x.ctx, C.int(nb))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	socket = int(code)
@@ -46,15 +48,15 @@ func (x *Modbus) ModbusTcpListen(nb int) (socket int, err error) {
 	return
 }
 
-// ModbusTcpAccept modbus_tcp_accept - accept a new connection on a TCP Modbus socket (IPv4)
+// TcpAccept modbus_tcp_accept - accept a new connection on a TCP Modbus socket (IPv4)
 //
 // The modbus_tcp_accept() function shall extract the first connection on the queue of pending connections, create a
 // new socket and store it in libmodbus context given in argument. If available, accept4() with SOCK_CLOEXEC will be
 // called instead of accept().
-func (x *Modbus) ModbusTcpAccept() (err error) {
+func (x *Modbus) TcpAccept() (err error) {
 	code := C.modbus_tcp_accept(x.ctx, (*C.int)(unsafe.Pointer(&x.socket)))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
@@ -85,15 +87,15 @@ func ModbusNewTcpPi(node string, service string) *Modbus {
 	return &Modbus{ctx: ctx}
 }
 
-// ModbusTcpPiListen modbus_tcp_pi_listen - create and listen a TCP PI Modbus socket (IPv6)
+// TcpPiListen modbus_tcp_pi_listen - create and listen a TCP PI Modbus socket (IPv6)
 //
 // The modbus_tcp_pi_listen() function shall create a socket and listen to maximum nb_connection incoming connections
 // on the specified nodes. The context ctx must be allocated and initialized with modbus_new_tcp_pi before to set the
 // node to listen, if node is set to NULL or '0.0.0.0', any addresses will be listen.
-func (x *Modbus) ModbusTcpPiListen(nb int) (socket int, err error) {
+func (x *Modbus) TcpPiListen(nb int) (socket int, err error) {
 	code := C.modbus_tcp_pi_listen(x.ctx, C.int(nb))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	socket = int(code)
@@ -101,15 +103,15 @@ func (x *Modbus) ModbusTcpPiListen(nb int) (socket int, err error) {
 	return
 }
 
-// ModbusTcpPiAccept modbus_tcp_pi_accept - accept a new connection on a TCP PI Modbus socket (IPv6)
+// TcpPiAccept modbus_tcp_pi_accept - accept a new connection on a TCP PI Modbus socket (IPv6)
 //
 // The modbus_tcp_pi_accept() function shall extract the first connection on the queue of pending connections, create a
 // new socket and store it in libmodbus context given in argument. If available, accept4() with SOCK_CLOEXEC will be
 // called instead of accept().
-func (x *Modbus) ModbusTcpPiAccept() (err error) {
+func (x *Modbus) TcpPiAccept() (err error) {
 	code := C.modbus_tcp_pi_accept(x.ctx, (*C.int)(unsafe.Pointer(&x.socket)))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return

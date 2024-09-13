@@ -2,7 +2,7 @@ package libmodbusgo
 
 /*
 #cgo CFLAGS: -I${SRCDIR}
-#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib -lmodbus -Wl,-rpath=/usr/local/lib
+#cgo linux,amd64 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib/libmodbus.a
 #include "modbus.h"
 
 extern int modbus_version_check(unsigned int major, unsigned int minor, unsigned int micro);

@@ -2,8 +2,11 @@ package libmodbusgo
 
 /*
 #cgo CFLAGS: -I${SRCDIR}
-#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib -lmodbus -Wl,-rpath=/usr/local/lib
+#cgo linux,amd64 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib/libmodbus.a
+
 #include "modbus.h"
+
+extern int get_errno();
 */
 import "C"
 import (
@@ -18,11 +21,15 @@ import (
 // the error number specified by the errnum argument. As libmodbus defines additional error
 // numbers over and above those defined by the operating system, applications should use
 // modbus_strerror() in preference to the standard strerror() function.
-func ModbusStrError(errnum int) string {
-	return C.GoString(C.modbus_strerror(C.int(errnum)))
+func ModbusStrError() error {
+	code := C.get_errno()
+	return &Error{
+		code:    ErrorCode(code),
+		message: C.GoString(C.modbus_strerror(code)),
+	}
 }
 
-// ModbusSetSlave modbus_set_slave - set slave number in the context
+// SetSlave modbus_set_slave - set slave number in the context
 //
 // The modbus_set_slave() function shall set the slave number in the libmodbus context.
 //
@@ -47,29 +54,29 @@ func ModbusStrError(errnum int) string {
 //
 // The broadcast address is MODBUS_BROADCAST_ADDRESS. This special value must be use when
 // you want all Modbus devices of the network receive the request.
-func (x *Modbus) ModbusSetSlave(slave int) (err error) {
+func (x *Modbus) SetSlave(slave int) (err error) {
 	code := C.modbus_set_slave(x.ctx, C.int(slave))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusGetSlave modbus_get_slave - get slave number in the context
+// GetSlave modbus_get_slave - get slave number in the context
 //
 // The modbus_get_slave() function shall get the slave number in the libmodbus context.
-func (x *Modbus) ModbusGetSlave() (slave int, err error) {
+func (x *Modbus) GetSlave() (slave int, err error) {
 	code := C.modbus_get_slave(x.ctx)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	slave = int(code)
 	return
 }
 
-// ModbusSetErrorRecovery modbus_set_error_recovery - set the error recovery mode
+// SetErrorRecovery modbus_set_error_recovery - set the error recovery mode
 //
 // The modbus_set_error_recovery() function shall set the error recovery mode to apply when the connection
 // fails or the byte received is not expected. The argument error_recovery may be bitwise-or'ed with zero or
@@ -93,55 +100,55 @@ func (x *Modbus) ModbusGetSlave() (slave int, err error) {
 // The modes are mask values and so they are complementary.
 //
 // It's not recommended to enable error recovery for a Modbus slave/server.
-func (x *Modbus) ModbusSetErrorRecovery(errorRecovery ModbusErrorRecoveryMode) (err error) {
+func (x *Modbus) SetErrorRecovery(errorRecovery ModbusErrorRecoveryMode) (err error) {
 	code := C.modbus_set_error_recovery(x.ctx, C.modbus_error_recovery_mode(errorRecovery))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusConnect modbus_connect - establish a Modbus connection
+// Connect modbus_connect - establish a Modbus connection
 //
 // The modbus_connect() function shall establish a connection to a Modbus server, a network or a bus
 // using the context information of libmodbus context given in argument.
-func (x *Modbus) ModbusConnect() (err error) {
+func (x *Modbus) Connect() (err error) {
 	code := C.modbus_connect(x.ctx)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusSetSocket modbus_set_socket - set socket of the context
+// SetSocket modbus_set_socket - set socket of the context
 //
 // The modbus_set_socket() function shall set the socket or file descriptor in the libmodbus context.
 // This function is useful for managing multiple client connections to the same server.
-func (x *Modbus) ModbusSetSocket(s int) (err error) {
+func (x *Modbus) SetSocket(s int) (err error) {
 	code := C.modbus_set_socket(x.ctx, C.int(s))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusGetSocket modbus_get_socket - get the current socket of the context
+// GetSocket modbus_get_socket - get the current socket of the context
 //
 // The modbus_get_socket() function shall return the current socket or file descriptor of the libmodbus context.
-func (x *Modbus) ModbusGetSocket() (s int, err error) {
+func (x *Modbus) GetSocket() (s int, err error) {
 	code := C.modbus_get_socket(x.ctx)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	s = int(code)
 	return
 }
 
-// ModbusSetResponseTimeout modbus_set_response_timeout - set timeout for response
+// SetResponseTimeout modbus_set_response_timeout - set timeout for response
 //
 // The modbus_set_response_timeout() function shall set the timeout interval used to wait for a response.
 // When a byte timeout is set, if elapsed time for the first byte of response is longer than the given timeout,
@@ -149,33 +156,33 @@ func (x *Modbus) ModbusGetSocket() (s int, err error) {
 // the full confirmation response must be received before expiration of the response timeout.
 //
 // The value of to_usec argument must be in the range 0 to 999999.
-func (x *Modbus) ModbusSetResponseTimeout(timeout time.Duration) (err error) {
+func (x *Modbus) SetResponseTimeout(timeout time.Duration) (err error) {
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_response_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusGetResponseTimeout modbus_get_response_timeout - get timeout for response
+// GetResponseTimeout modbus_get_response_timeout - get timeout for response
 //
 // The modbus_get_response_timeout() function shall return the timeout interval used to wait for a response
 // in the to_sec and to_usec arguments.
-func (x *Modbus) ModbusGetResponseTimeout() (timeout time.Duration, err error) {
+func (x *Modbus) GetResponseTimeout() (timeout time.Duration, err error) {
 	to_sec := C.uint32_t(0)
 	to_usec := C.uint32_t(0)
 	code := C.modbus_get_response_timeout(x.ctx, &to_sec, &to_usec)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	timeout = time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond
 	return
 }
 
-// ModbusSetByteTimeout modbus_set_byte_timeout - set timeout between bytes
+// SetByteTimeout modbus_set_byte_timeout - set timeout between bytes
 //
 // The modbus_set_byte_timeout() function shall set the timeout interval between two consecutive
 // bytes of the same message. The timeout is an upper bound on the amount of time elapsed before select()
@@ -188,33 +195,33 @@ func (x *Modbus) ModbusGetResponseTimeout() (timeout time.Duration, err error) {
 // modbus_set_response_timeout() governs the entire handling of the response, the full confirmation
 // response must be received before expiration of the response timeout. When a byte timeout is set,
 // the response timeout is only used to wait for until the first byte of the response.
-func (x *Modbus) ModbusSetByteTimeout(timeout time.Duration) (err error) {
+func (x *Modbus) SetByteTimeout(timeout time.Duration) (err error) {
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_byte_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusGetByteTimeout modbus_get_byte_timeout - get timeout between bytes
+// GetByteTimeout modbus_get_byte_timeout - get timeout between bytes
 //
 // The modbus_get_byte_timeout() function shall store the timeout interval between two
 // consecutive bytes of the same message in the to_sec and to_usec arguments.
-func (x *Modbus) ModbusGetByteTimeout() (timeout time.Duration, err error) {
+func (x *Modbus) GetByteTimeout() (timeout time.Duration, err error) {
 	to_sec := C.uint32_t(0)
 	to_usec := C.uint32_t(0)
 	code := C.modbus_get_byte_timeout(x.ctx, &to_sec, &to_usec)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	timeout = time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond
 	return
 }
 
-// ModbusSetIndicationTimeout modbus_set_indication_timeout - set timeout between indications
+// SetIndicationTimeout modbus_set_indication_timeout - set timeout between indications
 //
 // The modbus_set_indication_timeout() function shall set the timeout interval used by a server
 // to wait for a request from a client.
@@ -223,17 +230,17 @@ func (x *Modbus) ModbusGetByteTimeout() (timeout time.Duration, err error) {
 //
 // If both to_sec and to_usec are zero, this timeout will not be used at all. In this case,
 // the server will wait forever.
-func (x *Modbus) ModbusSetIndicationTimeout(timeout time.Duration) (err error) {
+func (x *Modbus) SetIndicationTimeout(timeout time.Duration) (err error) {
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_indication_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusGetIndicationTimeout modbus_get_indication_timeout - get timeout used to wait for an indication
+// GetIndicationTimeout modbus_get_indication_timeout - get timeout used to wait for an indication
 // (request received by a server).
 //
 // The modbus_get_indication_timeout() function shall store the timeout interval used to wait for an
@@ -241,75 +248,84 @@ func (x *Modbus) ModbusSetIndicationTimeout(timeout time.Duration) (err error) {
 // to designate a request received by the server.
 //
 // The default value is zero, it means the server will wait forever.
-func (x *Modbus) ModbusGetIndicationTimeout() (timeout time.Duration, err error) {
+func (x *Modbus) GetIndicationTimeout() (timeout time.Duration, err error) {
 	to_sec := C.uint32_t(0)
 	to_usec := C.uint32_t(0)
 	code := C.modbus_get_indication_timeout(x.ctx, &to_sec, &to_usec)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	timeout = time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond
 	return
 }
 
-// ModbusGetHeaderLength modbus_get_header_length - retrieve the current header length
+// GetHeaderLength modbus_get_header_length - retrieve the current header length
 //
 // The modbus_get_header_length() function shall retrieve the current header length from
 // the backend. This function is convenient to manipulate a message and so it's limited to
 // low-level operations.
-func (x *Modbus) ModbusGetHeaderLength() (length int) {
+func (x *Modbus) GetHeaderLength() (length int) {
 	code := C.modbus_get_header_length(x.ctx)
 	length = int(code)
 	return
 }
 
-// ModbusFree modbus_free - free a libmodbus context
+// Free modbus_free - free a libmodbus context
 //
 // The modbus_free() function shall free an allocated modbus_t structure.
-func (x *Modbus) ModbusFree() {
+func (x *Modbus) Free() {
 	C.modbus_free(x.ctx)
+	mapSetRtsCallback.Range(func(key, value any) bool {
+		cctx, ok := key.(*Modbus)
+		if ok {
+			if cctx == x {
+				mapSetRtsCallback.Delete(key)
+			}
+		}
+		return true
+	})
 }
 
-// ModbusClose modbus_close - close a Modbus connection
+// Close modbus_close - close a Modbus connection
 //
 // The modbus_close() function shall close the connection established with the backend set in the context.
-func (x *Modbus) ModbusClose() {
+func (x *Modbus) Close() {
 	C.modbus_close(x.ctx)
 }
 
-// ModbusFlush modbus_flush - flush non-transmitted data
+// Flush modbus_flush - flush non-transmitted data
 //
 // The modbus_flush() function shall discard data received but not read to the socket or file descriptor associated
 // to the context 'ctx'.
-func (x *Modbus) ModbusFlush() (err error) {
+func (x *Modbus) Flush() (err error) {
 	code := C.modbus_flush(x.ctx)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusSetDebug modbus_set_debug - set debug flag of the context
+// SetDebug modbus_set_debug - set debug flag of the context
 //
 // The modbus_set_debug() function shall set the debug flag of the modbus_t context by using the argument flag.
 // By default, the boolean flag is set to FALSE. When the flag value is set to TRUE, many verbose messages are
 // displayed on stdout and stderr. For example, this flag is useful to display the bytes of the Modbus messages.
-func (x *Modbus) ModbusSetDebug(flag bool) (err error) {
+func (x *Modbus) SetDebug(flag bool) (err error) {
 	f := C.FALSE
 	if flag {
 		f = C.TRUE
 	}
 	code := C.modbus_set_debug(x.ctx, C.int(f))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusReadBits modbus_read_bits - read many bits
+// ReadBits modbus_read_bits - read many bits
 //
 // The modbus_read_bits() function shall read the status of the nb bits (coils) to the address addr of the remote
 // device. The result of reading is stored in dest array as unsigned bytes (8 bits) set to TRUE or FALSE.
@@ -317,11 +333,11 @@ func (x *Modbus) ModbusSetDebug(flag bool) (err error) {
 // You must take care to allocate enough memory to store the results in dest (at least nb * sizeof(uint8_t)).
 //
 // The function uses the Modbus function code 0x01 (read coil status).
-func (x *Modbus) ModbusReadBits(addr int, nb int) (out []byte, err error) {
+func (x *Modbus) ReadBits(addr int, nb int) (out []byte, err error) {
 	dest := make([]C.uint8_t, nb)
 	code := C.modbus_read_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	for _, v := range dest {
@@ -330,7 +346,7 @@ func (x *Modbus) ModbusReadBits(addr int, nb int) (out []byte, err error) {
 	return
 }
 
-// ModbusReadInputBits modbus_read_input_bits - read many input bits
+// ReadInputBits modbus_read_input_bits - read many input bits
 //
 // The modbus_read_input_bits() function shall read the content of the nb input bits to the address addr of the remote
 // device. The result of reading is stored in dest array as unsigned bytes (8 bits) set to TRUE or FALSE.
@@ -338,11 +354,11 @@ func (x *Modbus) ModbusReadBits(addr int, nb int) (out []byte, err error) {
 // You must take care to allocate enough memory to store the results in dest (at least nb * sizeof(uint8_t)).
 //
 // The function uses the Modbus function code 0x02 (read input status).
-func (x *Modbus) ModbusReadInputBits(addr int, nb int) (out []byte, err error) {
+func (x *Modbus) ReadInputBits(addr int, nb int) (out []byte, err error) {
 	dest := make([]C.uint8_t, nb)
 	code := C.modbus_read_input_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	for _, v := range dest {
@@ -351,7 +367,7 @@ func (x *Modbus) ModbusReadInputBits(addr int, nb int) (out []byte, err error) {
 	return
 }
 
-// ModbusReadRegisters modbus_read_registers - read many registers
+// ReadRegisters modbus_read_registers - read many registers
 //
 // The modbus_read_registers() function shall read the content of the nb holding registers to the address addr of the
 // remote device. The result of reading is stored in dest array as word values (16 bits).
@@ -359,11 +375,11 @@ func (x *Modbus) ModbusReadInputBits(addr int, nb int) (out []byte, err error) {
 // You must take care to allocate enough memory to store the results in dest (at least nb * sizeof(uint16_t)).
 //
 // The function uses the Modbus function code 0x03 (read holding registers).
-func (x *Modbus) ModbusReadRegisters(addr int, nb int) (out []uint16, err error) {
+func (x *Modbus) ReadRegisters(addr int, nb int) (out []uint16, err error) {
 	dest := make([]C.uint16_t, nb)
 	code := C.modbus_read_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	for _, v := range dest {
@@ -372,7 +388,7 @@ func (x *Modbus) ModbusReadRegisters(addr int, nb int) (out []uint16, err error)
 	return
 }
 
-// ModbusReadInputRegisters modbus_read_input_registers - read many input registers
+// ReadInputRegisters modbus_read_input_registers - read many input registers
 //
 // The modbus_read_input_registers() function shall read the content of the nb input registers to address addr of the
 // remote device. The result of the reading is stored in dest array as word values (16 bits).
@@ -381,11 +397,11 @@ func (x *Modbus) ModbusReadRegisters(addr int, nb int) (out []uint16, err error)
 //
 // The function uses the Modbus function code 0x04 (read input registers). The holding registers and input registers
 // have different historical meaning, but nowadays it's more common to use holding registers only.
-func (x *Modbus) ModbusReadInputRegisters(addr int, nb int) (out []uint16, err error) {
+func (x *Modbus) ReadInputRegisters(addr int, nb int) (out []uint16, err error) {
 	dest := make([]C.uint16_t, nb)
 	code := C.modbus_read_input_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	for _, v := range dest {
@@ -394,47 +410,47 @@ func (x *Modbus) ModbusReadInputRegisters(addr int, nb int) (out []uint16, err e
 	return
 }
 
-// ModbusWriteBit modbus_write_bit - write a single bit
+// WriteBit modbus_write_bit - write a single bit
 //
 // The modbus_write_bit() function shall write the status of status at the address addr of the remote device. The value
 // must be set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x05 (force single coil).
-func (x *Modbus) ModbusWriteBit(addr int, status bool) (err error) {
+func (x *Modbus) WriteBit(addr int, status bool) (err error) {
 	f := C.FALSE
 	if status {
 		f = C.TRUE
 	}
 	code := C.modbus_write_bit(x.ctx, C.int(addr), C.int(f))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusWriteRegister modbus_write_register - write a single register
+// WriteRegister modbus_write_register - write a single register
 //
 // he modbus_write_register() function shall write the value of value holding registers at the address addr of the
 // remote evice.
 //
 // he function uses the Modbus function code 0x06 (preset single register).
-func (x *Modbus) ModbusWriteRegister(addr int, value uint16) (err error) {
+func (x *Modbus) WriteRegister(addr int, value uint16) (err error) {
 	code := C.modbus_write_register(x.ctx, C.int(addr), C.uint16_t(value))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusWriteBits modbus_write_bits - write many bits
+// WriteBits modbus_write_bits - write many bits
 //
 // The modbus_write_bits() function shall write the status of the nb bits (coils) from src at the address addr of the
 // remote device. The src array must contains bytes set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x0F (force multiple coils).
-func (x *Modbus) ModbusWriteBits(addr int, data []bool) (err error) {
+func (x *Modbus) WriteBits(addr int, data []bool) (err error) {
 	nb := len(data)
 	dest := make([]C.uint8_t, nb)
 	for _, v := range data {
@@ -446,19 +462,19 @@ func (x *Modbus) ModbusWriteBits(addr int, data []bool) (err error) {
 	}
 	code := C.modbus_write_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusWriteRegisters modbus_write_registers - write many registers
+// WriteRegisters modbus_write_registers - write many registers
 //
 // The modbus_write_registers() function shall write the content of the nb holding registers from the array src at
 // address addr of the remote device.
 //
 // The function uses the Modbus function code 0x10 (preset multiple registers).
-func (x *Modbus) ModbusWriteRegisters(addr int, data []uint16) (err error) {
+func (x *Modbus) WriteRegisters(addr int, data []uint16) (err error) {
 	nb := len(data)
 	dest := make([]C.uint16_t, nb)
 	for _, v := range data {
@@ -466,13 +482,13 @@ func (x *Modbus) ModbusWriteRegisters(addr int, data []uint16) (err error) {
 	}
 	code := C.modbus_write_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusMaskWriteRegister modbus_mask_write_register - mask a single register
+// MaskWriteRegister modbus_mask_write_register - mask a single register
 //
 // The modbus_mask_write_register() function shall modify the value of the holding register at the address 'addr' of
 // the remote device using the algorithm:
@@ -480,16 +496,16 @@ func (x *Modbus) ModbusWriteRegisters(addr int, data []uint16) (err error) {
 // new value = (current value AND 'and') OR ('or' AND (NOT 'and'))
 //
 // The function uses the Modbus function code 0x16 (mask single register).
-func (x *Modbus) ModbusMaskWriteRegister(addr int, andMask uint16, orMask uint16) (err error) {
+func (x *Modbus) MaskWriteRegister(addr int, andMask uint16, orMask uint16) (err error) {
 	code := C.modbus_mask_write_register(x.ctx, C.int(addr), C.uint16_t(andMask), C.uint16_t(orMask))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusWriteAndReadRegisters modbus_write_and_read_registers - write and read many registers in a single transaction
+// WriteAndReadRegisters modbus_write_and_read_registers - write and read many registers in a single transaction
 //
 // The modbus_write_and_read_registers() function shall write the content of the write_nb holding registers from the
 // array 'src' to the address write_addr of the remote device then shall read the content of the read_nb holding
@@ -499,7 +515,7 @@ func (x *Modbus) ModbusMaskWriteRegister(addr int, andMask uint16, orMask uint16
 // You must take care to allocate enough memory to store the results in dest (at least nb * sizeof(uint16_t)).
 //
 // The function uses the Modbus function code 0x17 (write/read registers).
-func (x *Modbus) ModbusWriteAndReadRegisters(addr int, writeAddr int, src []uint16, readAddr int, readNb int) (dest []uint16, err error) {
+func (x *Modbus) WriteAndReadRegisters(addr int, writeAddr int, src []uint16, readAddr int, readNb int) (dest []uint16, err error) {
 	writeNb := len(src)
 	csrc := make([]C.uint16_t, writeNb)
 	for _, v := range src {
@@ -508,7 +524,7 @@ func (x *Modbus) ModbusWriteAndReadRegisters(addr int, writeAddr int, src []uint
 	cdest := make([]C.uint16_t, readNb)
 	code := C.modbus_write_and_read_registers(x.ctx, C.int(writeAddr), C.int(writeNb), (*C.uint16_t)(unsafe.Pointer(&csrc[0])), C.int(readAddr), C.int(readNb), (*C.uint16_t)(unsafe.Pointer(&cdest[0])))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	for _, v := range cdest {
@@ -517,7 +533,7 @@ func (x *Modbus) ModbusWriteAndReadRegisters(addr int, writeAddr int, src []uint
 	return
 }
 
-// ModbusReportSlaveId modbus_report_slave_id - returns a description of the controller
+// ReportSlaveId modbus_report_slave_id - returns a description of the controller
 //
 // The modbus_report_slave_id() function shall send a request to the controller to obtain a description of the
 // controller.
@@ -531,11 +547,11 @@ func (x *Modbus) ModbusWriteAndReadRegisters(addr int, writeAddr int, src []uint
 //     string.
 //
 // The function writes at most max_dest bytes from the response to dest so you must ensure that dest is large enough.
-func (x *Modbus) ModbusReportSlaveId() (dest *ReportSlaveId, err error) {
+func (x *Modbus) ReportSlaveId() (dest *ReportSlaveId, err error) {
 	cdest := make([]C.uint8_t, MODBUS_MAX_PDU_LENGTH)
 	code := C.modbus_report_slave_id(x.ctx, C.int(MODBUS_MAX_PDU_LENGTH), unsafe.SliceData(cdest))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	buff := []byte{}
@@ -760,7 +776,7 @@ func (mm *ModbusMapping) Free() {
 	C.modbus_mapping_free(mm.mb)
 }
 
-// ModbusSendRawRequest modbus_send_raw_request - send a raw request
+// SendRawRequest modbus_send_raw_request - send a raw request
 //
 // The modbus_send_raw_request() function shall send a request via the socket of the context ctx. This function must be
 // used for debugging purposes because you have to take care to make a valid request by hand. The function only adds to
@@ -769,44 +785,44 @@ func (mm *ModbusMapping) Free() {
 //
 // The public header of libmodbus provides a list of supported Modbus functions codes, prefixed by MODBUS_FC_ (eg.
 // MODBUS_FC_READ_HOLDING_REGISTERS), to help build of raw requests.
-func (x *Modbus) ModbusSendRawRequest(raw []byte) (err error) {
+func (x *Modbus) SendRawRequest(raw []byte) (err error) {
 	req := []C.uint8_t{}
 	for _, v := range raw {
 		req = append(req, C.uint8_t(v))
 	}
 	code := C.modbus_send_raw_request(x.ctx, unsafe.SliceData(req), C.int(len(raw)))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-func (x *Modbus) ModbusSendRawRequestTid(raw []byte, tid int) (err error) {
+func (x *Modbus) SendRawRequestTid(raw []byte, tid int) (err error) {
 	req := []C.uint8_t{}
 	for _, v := range raw {
 		req = append(req, C.uint8_t(v))
 	}
 	code := C.modbus_send_raw_request_tid(x.ctx, unsafe.SliceData(req), C.int(len(raw)), C.int(tid))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusReceive modbus_receive - receive an indication request
+// Receive modbus_receive - receive an indication request
 //
 // The modbus_receive() function shall receive an indication request from the socket of the context ctx. This function
 // is used by a Modbus slave/server to receive and analyze indication request sent by the masters/clients.
 //
 // If you need to use another socket or file descriptor than the one defined in the context ctx, see the function
 // modbus_set_socket.
-func (x *Modbus) ModbusReceive() (req []byte, err error) {
+func (x *Modbus) Receive() (req []byte, err error) {
 	var recv *C.uint8_t
 	code := C.modbus_receive(x.ctx, recv)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	data := unsafe.Slice(recv, int(code))
@@ -816,7 +832,7 @@ func (x *Modbus) ModbusReceive() (req []byte, err error) {
 	return
 }
 
-// ModbusReceiveConfirmation modbus_receive_confirmation - receive a confirmation request
+// ReceiveConfirmation modbus_receive_confirmation - receive a confirmation request
 //
 // The modbus_receive_confirmation() function shall receive a request via the socket of the context ctx. This function
 // must be used for debugging purposes because the received response isn't checked against the initial request. This
@@ -826,11 +842,11 @@ func (x *Modbus) ModbusReceive() (req []byte, err error) {
 // bytes and in TCP it must be MODBUS_TCP_MAX_ADU_LENGTH bytes. If you want to write code compatible with both, you can
 // use the constant MODBUS_MAX_ADU_LENGTH (maximum value of all libmodbus backends). Take care to allocate enough
 // memory to store responses to avoid crashes of your server.
-func (x *Modbus) ModbusReceiveConfirmation() (rsp []byte, err error) {
+func (x *Modbus) ReceiveConfirmation() (rsp []byte, err error) {
 	var recv *C.uint8_t
 	code := C.modbus_receive_confirmation(x.ctx, recv)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	data := unsafe.Slice(recv, int(code))
@@ -840,7 +856,7 @@ func (x *Modbus) ModbusReceiveConfirmation() (rsp []byte, err error) {
 	return
 }
 
-// ModbusReply modbus_reply - send a response to the received request
+// Reply modbus_reply - send a response to the received request
 //
 // The modbus_reply() function shall send a response to received request. The request req given in argument is
 // analyzed, a response is then built and sent by using the information of the modbus context ctx.
@@ -851,20 +867,20 @@ func (x *Modbus) ModbusReceiveConfirmation() (rsp []byte, err error) {
 // If an error occurs, an exception response will be sent.
 //
 // This function is designed for Modbus servers.
-func (x *Modbus) ModbusReply(req []byte, mm *ModbusMapping) (err error) {
+func (x *Modbus) Reply(req []byte, mm *ModbusMapping) (err error) {
 	raw := []C.uint8_t{}
 	for _, v := range req {
 		raw = append(raw, C.uint8_t(v))
 	}
 	code := C.modbus_reply(x.ctx, unsafe.SliceData(raw), C.int(len(req)), mm.mb)
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusReplyException modbus_reply_exception - send an exception response
+// ReplyException modbus_reply_exception - send an exception response
 //
 // The modbus_reply_exception() function shall send an exception response based on the 'exception_code' in argument.
 //
@@ -883,20 +899,20 @@ func (x *Modbus) ModbusReply(req []byte, mm *ModbusMapping) (err error) {
 //   - MODBUS_EXCEPTION_GATEWAY_TARGET (11)
 //
 // The initial request req is required to build a valid response.
-func (x *Modbus) ModbusReplyException(req []byte, ecode uint) (err error) {
+func (x *Modbus) ReplyException(req []byte, ecode uint) (err error) {
 	raw := []C.uint8_t{}
 	for _, v := range req {
 		raw = append(raw, C.uint8_t(v))
 	}
 	code := C.modbus_reply_exception(x.ctx, unsafe.SliceData(raw), C.uint(ecode))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusEnableQuirks modbus_enable_quirks - enable a list of quirks according to a mask
+// EnableQuirks modbus_enable_quirks - enable a list of quirks according to a mask
 //
 // The function is only useful when you are confronted with equipment which does not respect the protocol, which
 // behaves strangely or when you wish to move away from the standard.
@@ -908,16 +924,16 @@ func (x *Modbus) ModbusReplyException(req []byte, ecode uint) (err error) {
 //     (should be enabled on the slave device).
 //
 // You can combine the flags by using the bitwise OR operator.
-func (x *Modbus) ModbusEnableQuirks(quirksMask uint) (err error) {
+func (x *Modbus) EnableQuirks(quirksMask uint) (err error) {
 	code := C.modbus_enable_quirks(x.ctx, C.uint(quirksMask))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
 }
 
-// ModbusDisableQuirks modbus_disable_quirks - disable a list of quirks according to a mask
+// DisableQuirks modbus_disable_quirks - disable a list of quirks according to a mask
 //
 // The function shall disable the quirks according to the provided mask. It's useful to revert changes applied by a
 // previous call to modbus_enable_quirks
@@ -930,10 +946,10 @@ func (x *Modbus) ModbusEnableQuirks(quirksMask uint) (err error) {
 //
 //	// Reset all quirks
 //	modbus_disable_quirks(ctx, MODBUS_QUIRK_ALL);
-func (x *Modbus) ModbusDisableQuirks(quirksMask uint) (err error) {
+func (x *Modbus) DisableQuirks(quirksMask uint) (err error) {
 	code := C.modbus_disable_quirks(x.ctx, C.uint(quirksMask))
 	if code < 0 {
-		err = ErrorCode(code).Error()
+		err = ModbusStrError()
 		return
 	}
 	return
