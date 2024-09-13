@@ -132,7 +132,8 @@ var (
 )
 
 type Modbus struct {
-	ctx *C.modbus_t
+	ctx    *C.modbus_t
+	socket int // modbus tcp used
 }
 
 type ModbusMapping struct {
