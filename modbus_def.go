@@ -7,7 +7,9 @@ package libmodbusgo
 
 */
 import "C"
-import "fmt"
+import (
+	"fmt"
+)
 
 // Modbus function codes
 const (
@@ -134,14 +136,7 @@ type Modbus struct {
 }
 
 type ModbusMapping struct {
-	StartBits           int
-	TabBits             []byte
-	StartInputBits      int
-	TabInputBits        []byte
-	StartInputRegisters int
-	TabInputRegisters   []byte
-	StartRegisters      int
-	TabRegisters        []byte
+	mb *C.modbus_mapping_t
 }
 
 type ModbusErrorRecoveryMode byte
@@ -172,4 +167,10 @@ func (e *Error) Error() string {
 
 func (e *Error) Code() ErrorCode {
 	return e.code
+}
+
+type ReportSlaveId struct {
+	SlaveId            byte
+	RunIndicatorStatus byte
+	AdditionalData     []byte
 }

@@ -1,4 +1,3 @@
-// Package libmodbus Wrappers for Go callback functions to be passed into C.
 package libmodbusgo
 
 /*
