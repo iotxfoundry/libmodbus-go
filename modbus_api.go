@@ -5,6 +5,7 @@ package libmodbusgo
 #cgo linux,amd64 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib/libmodbus.a
 
 #include "modbus.h"
+#include <unistd.h>
 
 extern int get_errno();
 */
@@ -291,7 +292,12 @@ func (x *Modbus) Free() {
 //
 // The modbus_close() function shall close the connection established with the backend set in the context.
 func (x *Modbus) Close() {
-	C.modbus_close(x.ctx)
+	if x.ctx != nil {
+		C.modbus_close(x.ctx)
+	}
+	if x.socket != 0 {
+		C.close(C.int(x.socket))
+	}
 }
 
 // Flush modbus_flush - flush non-transmitted data
@@ -843,15 +849,14 @@ func (x *Modbus) Receive() (req []byte, err error) {
 // use the constant MODBUS_MAX_ADU_LENGTH (maximum value of all libmodbus backends). Take care to allocate enough
 // memory to store responses to avoid crashes of your server.
 func (x *Modbus) ReceiveConfirmation() (rsp []byte, err error) {
-	var recv *C.uint8_t
-	code := C.modbus_receive_confirmation(x.ctx, recv)
+	recv := make([]C.uint8_t, MODBUS_MAX_ADU_LENGTH)
+	code := C.modbus_receive_confirmation(x.ctx, unsafe.SliceData(recv))
 	if code < 0 {
 		err = ModbusStrError()
 		return
 	}
-	data := unsafe.Slice(recv, int(code))
-	for _, v := range data {
-		rsp = append(rsp, byte(v))
+	for i := range code {
+		rsp = append(rsp, byte(recv[i]))
 	}
 	return
 }
@@ -924,7 +929,7 @@ func (x *Modbus) ReplyException(req []byte, ecode uint) (err error) {
 //     (should be enabled on the slave device).
 //
 // You can combine the flags by using the bitwise OR operator.
-func (x *Modbus) EnableQuirks(quirksMask uint) (err error) {
+func (x *Modbus) EnableQuirks(quirksMask ModbusQuirks) (err error) {
 	code := C.modbus_enable_quirks(x.ctx, C.uint(quirksMask))
 	if code < 0 {
 		err = ModbusStrError()
@@ -946,7 +951,7 @@ func (x *Modbus) EnableQuirks(quirksMask uint) (err error) {
 //
 //	// Reset all quirks
 //	modbus_disable_quirks(ctx, MODBUS_QUIRK_ALL);
-func (x *Modbus) DisableQuirks(quirksMask uint) (err error) {
+func (x *Modbus) DisableQuirks(quirksMask ModbusQuirks) (err error) {
 	code := C.modbus_disable_quirks(x.ctx, C.uint(quirksMask))
 	if code < 0 {
 		err = ModbusStrError()
