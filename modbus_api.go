@@ -7,7 +7,7 @@ package libmodbusgo
 #include "modbus.h"
 #include <unistd.h>
 
-extern int get_errno();
+extern int get_errno_cgo();
 */
 import "C"
 import (
@@ -23,7 +23,7 @@ import (
 // numbers over and above those defined by the operating system, applications should use
 // modbus_strerror() in preference to the standard strerror() function.
 func ModbusStrError() error {
-	code := C.get_errno()
+	code := C.get_errno_cgo()
 	return &Error{
 		code:    ErrorCode(code),
 		message: C.GoString(C.modbus_strerror(code)),
