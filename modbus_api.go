@@ -422,12 +422,8 @@ func (x *Modbus) ReadInputRegisters(addr int, nb int) (out []uint16, err error) 
 // must be set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x05 (force single coil).
-func (x *Modbus) WriteBit(addr int, status bool) (err error) {
-	f := C.FALSE
-	if status {
-		f = C.TRUE
-	}
-	code := C.modbus_write_bit(x.ctx, C.int(addr), C.int(f))
+func (x *Modbus) WriteBit(addr int, status byte) (err error) {
+	code := C.modbus_write_bit(x.ctx, C.int(addr), C.int(status))
 	if code < 0 {
 		err = ModbusStrError()
 		return
@@ -456,15 +452,11 @@ func (x *Modbus) WriteRegister(addr int, value uint16) (err error) {
 // remote device. The src array must contains bytes set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x0F (force multiple coils).
-func (x *Modbus) WriteBits(addr int, data []bool) (err error) {
+func (x *Modbus) WriteBits(addr int, data []byte) (err error) {
 	nb := len(data)
 	dest := make([]C.uint8_t, nb)
-	for _, v := range data {
-		f := C.FALSE
-		if v {
-			f = C.TRUE
-		}
-		dest = append(dest, C.uint8_t(f))
+	for k, v := range data {
+		dest[k] = C.uint8_t(v)
 	}
 	code := C.modbus_write_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
@@ -483,8 +475,8 @@ func (x *Modbus) WriteBits(addr int, data []bool) (err error) {
 func (x *Modbus) WriteRegisters(addr int, data []uint16) (err error) {
 	nb := len(data)
 	dest := make([]C.uint16_t, nb)
-	for _, v := range data {
-		dest = append(dest, C.uint16_t(v))
+	for k, v := range data {
+		dest[k] = C.uint16_t(v)
 	}
 	code := C.modbus_write_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
@@ -521,11 +513,11 @@ func (x *Modbus) MaskWriteRegister(addr int, andMask uint16, orMask uint16) (err
 // You must take care to allocate enough memory to store the results in dest (at least nb * sizeof(uint16_t)).
 //
 // The function uses the Modbus function code 0x17 (write/read registers).
-func (x *Modbus) WriteAndReadRegisters(addr int, writeAddr int, src []uint16, readAddr int, readNb int) (dest []uint16, err error) {
+func (x *Modbus) WriteAndReadRegisters(writeAddr int, src []uint16, readAddr int, readNb int) (dest []uint16, err error) {
 	writeNb := len(src)
 	csrc := make([]C.uint16_t, writeNb)
-	for _, v := range src {
-		csrc = append(csrc, C.uint16_t(v))
+	for k, v := range src {
+		csrc[k] = C.uint16_t(v)
 	}
 	cdest := make([]C.uint16_t, readNb)
 	code := C.modbus_write_and_read_registers(x.ctx, C.int(writeAddr), C.int(writeNb), (*C.uint16_t)(unsafe.Pointer(&csrc[0])), C.int(readAddr), C.int(readNb), (*C.uint16_t)(unsafe.Pointer(&cdest[0])))
@@ -682,54 +674,46 @@ func (mm *ModbusMapping) StartRegisters() int {
 	return int(mm.mb.start_registers)
 }
 
-func (mm *ModbusMapping) TabBits() iter.Seq2[int, bool] {
-	return func(yield func(int, bool) bool) {
+func (mm *ModbusMapping) TabBits() iter.Seq2[int, byte] {
+	return func(yield func(int, byte) bool) {
 		tab := unsafe.Slice(mm.mb.tab_bits, mm.NbBits())
 		for k, v := range tab {
-			if !yield(int(mm.StartBits()+k), v == C.TRUE) {
+			if !yield(int(mm.StartBits()+k), byte(v)) {
 				return
 			}
 		}
 	}
 }
 
-func (mm *ModbusMapping) GetTabBits(addr int) bool {
+func (mm *ModbusMapping) GetTabBits(addr int) byte {
 	tab := unsafe.Slice(mm.mb.tab_bits, mm.NbBits())
-	return tab[addr-mm.StartBits()] == C.TRUE
+	return byte(tab[addr-mm.StartBits()])
 }
 
-func (mm *ModbusMapping) SetTabBits(addr int, v bool) {
+func (mm *ModbusMapping) SetTabBits(addr int, v byte) {
 	tab := unsafe.Slice(mm.mb.tab_bits, mm.NbBits())
-	f := C.FALSE
-	if v {
-		f = C.TRUE
-	}
-	tab[addr-mm.StartBits()] = C.uint8_t(f)
+	tab[addr-mm.StartBits()] = C.uint8_t(v)
 }
 
-func (mm *ModbusMapping) TabInputBits() iter.Seq2[int, bool] {
-	return func(yield func(int, bool) bool) {
+func (mm *ModbusMapping) TabInputBits() iter.Seq2[int, byte] {
+	return func(yield func(int, byte) bool) {
 		tab := unsafe.Slice(mm.mb.tab_input_bits, mm.NbInputBits())
 		for k, v := range tab {
-			if !yield(int(mm.StartInputBits()+k), v == C.TRUE) {
+			if !yield(int(mm.StartInputBits()+k), byte(v)) {
 				return
 			}
 		}
 	}
 }
 
-func (mm *ModbusMapping) GetTabInputBits(addr int) bool {
+func (mm *ModbusMapping) GetTabInputBits(addr int) byte {
 	tab := unsafe.Slice(mm.mb.tab_input_bits, mm.NbInputBits())
-	return tab[addr-mm.StartInputBits()] == C.TRUE
+	return byte(tab[addr-mm.StartInputBits()])
 }
 
-func (mm *ModbusMapping) SetTabInputBits(addr int, v bool) {
+func (mm *ModbusMapping) SetTabInputBits(addr int, v byte) {
 	tab := unsafe.Slice(mm.mb.tab_input_bits, mm.NbInputBits())
-	f := C.FALSE
-	if v {
-		f = C.TRUE
-	}
-	tab[addr-mm.StartInputBits()] = C.uint8_t(f)
+	tab[addr-mm.StartInputBits()] = C.uint8_t(v)
 }
 
 func (mm *ModbusMapping) TabInputRegisters() iter.Seq2[int, uint16] {
@@ -825,15 +809,14 @@ func (x *Modbus) SendRawRequestTid(raw []byte, tid int) (err error) {
 // If you need to use another socket or file descriptor than the one defined in the context ctx, see the function
 // modbus_set_socket.
 func (x *Modbus) Receive() (req []byte, err error) {
-	var recv *C.uint8_t
-	code := C.modbus_receive(x.ctx, recv)
+	recv := make([]C.uint8_t, MODBUS_MAX_ADU_LENGTH)
+	code := C.modbus_receive(x.ctx, unsafe.SliceData(recv))
 	if code < 0 {
 		err = ModbusStrError()
 		return
 	}
-	data := unsafe.Slice(recv, int(code))
-	for _, v := range data {
-		req = append(req, byte(v))
+	for i := range code {
+		req = append(req, byte(recv[i]))
 	}
 	return
 }

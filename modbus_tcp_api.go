@@ -116,3 +116,46 @@ func (x *Modbus) TcpPiAccept() (err error) {
 	}
 	return
 }
+
+// TcpReceive modbus_receive - receive an indication request
+//
+// The modbus_receive() function shall receive an indication request from the socket of the context ctx. This function
+// is used by a Modbus slave/server to receive and analyze indication request sent by the masters/clients.
+//
+// If you need to use another socket or file descriptor than the one defined in the context ctx, see the function
+// modbus_set_socket.
+func (x *Modbus) TcpReceive() (req []byte, err error) {
+	recv := make([]C.uint8_t, MODBUS_TCP_MAX_ADU_LENGTH)
+	code := C.modbus_receive(x.ctx, unsafe.SliceData(recv))
+	if code < 0 {
+		err = ModbusStrError()
+		return
+	}
+	for i := range code {
+		req = append(req, byte(recv[i]))
+	}
+	return
+}
+
+// RtuReceiveConfirmation modbus_receive_confirmation - receive a confirmation request
+//
+// The modbus_receive_confirmation() function shall receive a request via the socket of the context ctx. This function
+// must be used for debugging purposes because the received response isn't checked against the initial request. This
+// function can be used to receive request not handled by the library.
+//
+// The maximum size of the response depends on the used backend, in RTU the rsp array must be MODBUS_RTU_MAX_ADU_LENGTH
+// bytes and in TCP it must be MODBUS_TCP_MAX_ADU_LENGTH bytes. If you want to write code compatible with both, you can
+// use the constant MODBUS_MAX_ADU_LENGTH (maximum value of all libmodbus backends). Take care to allocate enough
+// memory to store responses to avoid crashes of your server.
+func (x *Modbus) TcpReceiveConfirmation() (rsp []byte, err error) {
+	recv := make([]C.uint8_t, MODBUS_TCP_MAX_ADU_LENGTH)
+	code := C.modbus_receive_confirmation(x.ctx, unsafe.SliceData(recv))
+	if code < 0 {
+		err = ModbusStrError()
+		return
+	}
+	for i := range code {
+		rsp = append(rsp, byte(recv[i]))
+	}
+	return
+}
