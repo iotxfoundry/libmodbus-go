@@ -3,6 +3,10 @@ package libmodbusgo
 /*
 #cgo CFLAGS: -I${SRCDIR}
 #cgo linux,amd64 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_amd64/modbus/lib/libmodbus.a
+#cgo linux,arm LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_armv7/modbus/lib/libmodbus.a
+#cgo linux,arm64 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_armv8/modbus/lib/libmodbus.a
+#cgo linux,386 LDFLAGS: -static -L${SRCDIR}/3rdParty/linux_386/modbus/lib/libmodbus.a
+#cgo windows LDFLAGS: -static -L${SRCDIR}/3rdParty/windows_amd64/modbus/lib/modbus.lib
 
 #include "modbus.h"
 #include <unistd.h>

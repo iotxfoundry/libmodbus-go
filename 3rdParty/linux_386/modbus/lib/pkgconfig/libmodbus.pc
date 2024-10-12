@@ -1,0 +1,10 @@
+prefix=/mnt/build
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: modbus
+Description: Modbus library
+Version: 3.1.10
+Libs: -L${libdir} -lmodbus
+Cflags: -I${includedir}/modbus
