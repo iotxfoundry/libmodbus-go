@@ -51,7 +51,7 @@ func setup(outChan chan struct{}) {
 		return
 	}
 	outChan <- struct{}{}
-	err = ctx.TcpAccept()
+	_, err = ctx.TcpAccept()
 	if err != nil {
 		log.Fatalln(err)
 		return

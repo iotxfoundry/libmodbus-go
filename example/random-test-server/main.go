@@ -29,7 +29,7 @@ func main() {
 		log.Fatalln(err)
 		return
 	}
-	err = ctx.TcpAccept()
+	_, err = ctx.TcpAccept()
 	if err != nil {
 		log.Fatalln(err)
 		return

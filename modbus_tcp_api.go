@@ -34,7 +34,9 @@ func ModbusNewTcp(addr string, port int) *Modbus {
 	if ctx == nil {
 		return nil
 	}
-	return &Modbus{ctx: ctx}
+	return &Modbus{
+		ctx: ctx,
+	}
 }
 
 // TcpListen modbus_tcp_listen - create and listen a TCP Modbus socket (IPv4)
@@ -58,12 +60,13 @@ func (x *Modbus) TcpListen(nb int) (socket int, err error) {
 // The modbus_tcp_accept() function shall extract the first connection on the queue of pending connections, create a
 // new socket and store it in libmodbus context given in argument. If available, accept4() with SOCK_CLOEXEC will be
 // called instead of accept().
-func (x *Modbus) TcpAccept() (err error) {
+func (x *Modbus) TcpAccept() (socket int, err error) {
 	code := C.modbus_tcp_accept(x.ctx, (*C.int)(unsafe.Pointer(&x.socket)))
 	if code < 0 {
 		err = ModbusStrError()
 		return
 	}
+	socket = int(code)
 	return
 }
 

@@ -42,7 +42,7 @@ func main() {
 		for addr := ADDRESS_START; addr < ADDRESS_END; addr++ {
 
 			// Random numbers (short)
-			for i := 0; i < nb; i++ {
+			for i := range nb {
 				tab_rq_registers[i] = uint16(rand.UintN(65535))
 				tab_rw_rq_registers[i] = ^tab_rq_registers[i]
 				tab_rq_bits[i] = uint8(tab_rq_registers[i] % 2)
@@ -80,7 +80,7 @@ func main() {
 					log.Printf("Address = %d, nb = %d\n", addr, nb)
 					nbFail++
 				} else {
-					for i := 0; i < nb; i++ {
+					for i := range nb {
 						if out[i] != tab_rq_bits[i] {
 							log.Printf("ERROR modbus_read_bits\n")
 							log.Printf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
@@ -137,7 +137,7 @@ func main() {
 					log.Printf("Address = %d, nb = %d\n", addr, nb)
 					nbFail++
 				} else {
-					for i := 0; i < nb; i++ {
+					for i := range nb {
 						if tab_rq_registers[i] != out[i] {
 							log.Printf("ERROR modbus_read_registers\n")
 							log.Printf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
@@ -158,7 +158,7 @@ func main() {
 				log.Printf("Address = %d, nb = %d\n", addr, nb)
 				nbFail++
 			} else {
-				for i := 0; i < nb; i++ {
+				for i := range nb {
 					if out[i] != tab_rw_rq_registers[i] {
 						log.Printf("ERROR modbus_read_and_write_registers READ\n")
 						log.Printf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
@@ -177,7 +177,7 @@ func main() {
 					log.Printf("Address = %d, nb = %d\n", addr, nb)
 					nbFail++
 				} else {
-					for i := 0; i < nb; i++ {
+					for i := range nb {
 						if tab_rw_rq_registers[i] != out[i] {
 							log.Printf("ERROR modbus_read_and_write_registers WRITE\n")
 							log.Printf("Address = %d, value %d (0x%X) != %d (0x%X)\n",

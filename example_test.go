@@ -551,7 +551,7 @@ func ExampleModbus_TcpAccept() {
 		fmt.Println(err)
 		return
 	}
-	err = ctx.TcpAccept()
+	_, err = ctx.TcpAccept()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -571,7 +571,7 @@ func ExampleModbus_TcpListen() {
 		fmt.Println(err)
 		return
 	}
-	err = ctx.TcpAccept()
+	_, err = ctx.TcpAccept()
 	if err != nil {
 		fmt.Println(err)
 		return
