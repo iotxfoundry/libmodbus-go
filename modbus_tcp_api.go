@@ -55,6 +55,11 @@ func (x *Modbus) TcpListen(nb int) (socket int, err error) {
 	return
 }
 
+// TcpSocket get listened tcp socket (IPv4)
+func (x *Modbus) TcpSocket() int {
+	return x.socket
+}
+
 // TcpAccept modbus_tcp_accept - accept a new connection on a TCP Modbus socket (IPv4)
 //
 // The modbus_tcp_accept() function shall extract the first connection on the queue of pending connections, create a
