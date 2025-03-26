@@ -1,6 +1,8 @@
 package libmodbusgo
 
 import (
+	"bytes"
+	"encoding/gob"
 	"log"
 	"math/rand/v2"
 	"testing"
@@ -21,7 +23,7 @@ var (
 )
 
 func inittbl() {
-	for i := 0; i < nb; i++ {
+	for i := range nb {
 		tab_rq_registers[i] = uint16(rand.UintN(65535))
 		tab_rw_rq_registers[i] = ^tab_rq_registers[i]
 		tab_rq_bits[i] = uint8(tab_rq_registers[i] % 2)
@@ -318,5 +320,61 @@ func TestModbus_WriteAndReadRegisters(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestModbus_MarshalBinary(t *testing.T) {
+	nb := 10
+	mbMapping := ModbusMappingNew(nb, nb, nb, nb)
+	for i := range nb {
+		mbMapping.SetTabBits(i, byte(i%2))
+	}
+	for i := range nb {
+		mbMapping.SetTabInputBits(i, byte((i+1)%2))
+	}
+	for i := range nb {
+		mbMapping.SetTabInputRegisters(i, uint16(i+1))
+	}
+	for i := range nb {
+		mbMapping.SetTabRegisters(i, uint16(i))
+	}
+	buffer := &bytes.Buffer{}
+	enc := gob.NewEncoder(buffer)
+	err := enc.Encode(mbMapping)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	t.Log(len(buffer.Bytes()))
+	dec := gob.NewDecoder(buffer)
+	mbMapping = &ModbusMapping{}
+	err = dec.Decode(mbMapping)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	if mbMapping.NbBits() != nb {
+		t.FailNow()
+	}
+	if mbMapping.NbInputBits() != nb {
+		t.FailNow()
+	}
+	if mbMapping.NbRegisters() != nb {
+		t.FailNow()
+	}
+	if mbMapping.NbInputRegisters() != nb {
+		t.FailNow()
+	}
+	for k, v := range mbMapping.TabBits() {
+		t.Log(k, v)
+	}
+	for k, v := range mbMapping.TabInputBits() {
+		t.Log(k, v)
+	}
+	for k, v := range mbMapping.TabInputRegisters() {
+		t.Log(k, v)
+	}
+	for k, v := range mbMapping.TabRegisters() {
+		t.Log(k, v)
 	}
 }

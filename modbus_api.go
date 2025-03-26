@@ -15,6 +15,9 @@ extern int get_errno_cgo();
 */
 import "C"
 import (
+	"bytes"
+	"encoding/gob"
+	"errors"
 	"iter"
 	"time"
 	"unsafe"
@@ -644,6 +647,87 @@ func ModbusMappingNew(nbBits int, nbInputBits int, nbRegisters int, nbInputRegis
 	return &ModbusMapping{
 		mb: mn,
 	}
+}
+
+type mapping struct {
+	StartBits           int      `json:"start_bits"`
+	StartInputBits      int      `json:"start_input_bits"`
+	StartInputRegisters int      `json:"start_input_registers"`
+	StartRegisters      int      `json:"start_registers"`
+	Bits                []byte   `json:"bits"`
+	InputBits           []byte   `json:"input_bits"`
+	InputRegisters      []uint16 `json:"input_registers"`
+	Registers           []uint16 `json:"registers"`
+}
+
+func (mm *ModbusMapping) MarshalBinary() (buff []byte, err error) {
+	mp := &mapping{
+		StartBits:           mm.StartBits(),
+		StartInputBits:      mm.StartInputBits(),
+		StartInputRegisters: mm.StartInputRegisters(),
+		StartRegisters:      mm.StartRegisters(),
+	}
+	for _, v := range mm.TabBits() {
+		mp.Bits = append(mp.Bits, v)
+	}
+	for _, v := range mm.TabInputBits() {
+		mp.InputBits = append(mp.InputBits, v)
+	}
+	for _, v := range mm.TabInputRegisters() {
+		mp.InputRegisters = append(mp.InputRegisters, v)
+	}
+	for _, v := range mm.TabRegisters() {
+		mp.Registers = append(mp.Registers, v)
+	}
+	buffer := &bytes.Buffer{}
+	enc := gob.NewEncoder(buffer)
+	err = enc.Encode(mp)
+	if err != nil {
+		return
+	}
+	buff = buffer.Bytes()
+	return
+}
+
+func (mm *ModbusMapping) UnmarshalBinary(data []byte) (err error) {
+	mp := &mapping{}
+	buffer := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buffer)
+	err = dec.Decode(mp)
+	if err != nil {
+		return
+	}
+	if mm.mb != nil {
+		C.modbus_mapping_free(mm.mb)
+	}
+	mn := C.modbus_mapping_new_start_address(
+		C.uint(mp.StartBits),
+		C.uint(len(mp.Bits)),
+		C.uint(mp.StartInputBits),
+		C.uint(len(mp.InputBits)),
+		C.uint(mp.StartRegisters),
+		C.uint(len(mp.Registers)),
+		C.uint(mp.StartInputRegisters),
+		C.uint(len(mp.InputRegisters)),
+	)
+	if mn == nil {
+		err = errors.New("new modbus mapping error")
+		return
+	}
+	mm.mb = mn
+	for k, v := range mp.Bits {
+		mm.SetTabBits(mp.StartBits+k, v)
+	}
+	for k, v := range mp.InputBits {
+		mm.SetTabInputBits(mp.StartInputBits+k, v)
+	}
+	for k, v := range mp.Registers {
+		mm.SetTabRegisters(mp.StartRegisters+k, v)
+	}
+	for k, v := range mp.InputRegisters {
+		mm.SetTabInputRegisters(mp.StartInputRegisters+k, v)
+	}
+	return
 }
 
 func (mm *ModbusMapping) NbBits() int {
