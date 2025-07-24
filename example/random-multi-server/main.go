@@ -9,6 +9,9 @@ import (
 )
 
 func FD_SET(fd int, p *syscall.FdSet) {
+	if fd < 0 || fd/64 >= len(p.Bits) {
+		return
+	}
 	p.Bits[fd/64] |= 1 << (uint(fd) % 64)
 }
 
@@ -19,10 +22,16 @@ func FD_ZERO(p *syscall.FdSet) {
 }
 
 func FD_CLR(fd int, p *syscall.FdSet) {
+	if fd < 0 || fd/64 >= len(p.Bits) {
+		return
+	}
 	p.Bits[fd/64] &^= 1 << (uint(fd) % 64)
 }
 
 func FD_ISSET(fd int, p *syscall.FdSet) bool {
+	if fd < 0 || fd/64 >= len(p.Bits) {
+		return false
+	}
 	return p.Bits[fd/64]&(1<<(uint(fd)%64)) != 0
 }
 
@@ -61,15 +70,19 @@ func main() {
 		for _, client := range clients {
 			if client > 0 {
 				FD_SET(client, &readfds)
-			}
-			if client > maxFd {
-				maxFd = client
+				if client > maxFd {
+					maxFd = client
+				}
 			}
 		}
 
 		activity, err := syscall.Select(maxFd+1, &readfds, nil, nil, nil)
-		if activity < 0 || errors.Is(err, syscall.EINTR) {
-			log.Printf("select error: %s\n", err)
+		if activity < 0 {
+			if err != nil && !errors.Is(err, syscall.EINTR) {
+				log.Printf("select error: %s\n", err)
+				break
+			}
+			continue
 		}
 
 		if FD_ISSET(socket, &readfds) {
@@ -79,16 +92,22 @@ func main() {
 				continue
 			}
 
+			added := false
 			for k, client := range clients {
 				if client == 0 {
 					clients[k] = cs
+					added = true
 					break
 				}
+			}
+			if !added {
+				log.Printf("Too many clients, closing new socket: %d\n", cs)
+				syscall.Close(cs)
 			}
 		}
 
 		for k, client := range clients {
-			if FD_ISSET(client, &readfds) {
+			if client > 0 && FD_ISSET(client, &readfds) {
 				ctx.SetSocket(client)
 				req, err := ctx.Receive()
 				if err != nil {

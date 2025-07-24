@@ -151,7 +151,7 @@ func TestModbus_WriteBits(t *testing.T) {
 			t.Errorf("Address = %d, nb = %d\n", addr, nb)
 			t.FailNow()
 		} else {
-			for i := 0; i < nb; i++ {
+			for i := range nb {
 				if out[i] != tab_rq_bits[i] {
 					t.Errorf("ERROR modbus_read_bits\n")
 					t.Errorf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
@@ -242,7 +242,7 @@ func TestModbus_WriteRegisters(t *testing.T) {
 			t.Errorf("Address = %d, nb = %d\n", addr, nb)
 			t.FailNow()
 		} else {
-			for i := 0; i < nb; i++ {
+			for i := range nb {
 				if out[i] != tab_rq_registers[i] {
 					t.Errorf("ERROR modbus_read_registers\n")
 					t.Errorf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
@@ -288,7 +288,7 @@ func TestModbus_WriteAndReadRegisters(t *testing.T) {
 		t.Errorf("Address = %d, nb = %d\n", addr, nb)
 		t.FailNow()
 	} else {
-		for i := 0; i < nb; i++ {
+		for i := range nb {
 			if out[i] != tab_rw_rq_registers[i] {
 				t.Errorf("ERROR modbus_read_and_write_registers READ\n")
 				t.Errorf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
@@ -307,7 +307,7 @@ func TestModbus_WriteAndReadRegisters(t *testing.T) {
 			t.Errorf("Address = %d, nb = %d\n", addr, nb)
 			t.FailNow()
 		} else {
-			for i := 0; i < nb; i++ {
+			for i := range nb {
 				if tab_rw_rq_registers[i] != out[i] {
 					t.Errorf("ERROR modbus_read_and_write_registers WRITE\n")
 					t.Errorf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
