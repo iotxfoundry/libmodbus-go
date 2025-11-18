@@ -1,7 +1,6 @@
 package libmodbusgo
 
 /*
-#cgo CFLAGS: -I${SRCDIR}
 #include "modbus.h"
 */
 import "C"
