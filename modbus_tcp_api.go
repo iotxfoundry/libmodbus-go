@@ -41,6 +41,9 @@ func NewTCP(addr string, port int) (*Modbus, error) {
 func (x *Modbus) TcpListen(nb int) (socket int, err error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_tcp_listen(x.ctx, C.int(nb))
 	if code < 0 {
 		return 0, newCError()
@@ -65,6 +68,9 @@ func (x *Modbus) TcpSocket() int {
 func (x *Modbus) TcpAccept() (socket int, err error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_tcp_accept(x.ctx, (*C.int)(unsafe.Pointer(&x.socket)))
 	if code < 0 {
 		return 0, newCError()
@@ -105,6 +111,9 @@ func NewTCPPi(node string, service string) (*Modbus, error) {
 func (x *Modbus) TcpPiListen(nb int) (socket int, err error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_tcp_pi_listen(x.ctx, C.int(nb))
 	if code < 0 {
 		return 0, newCError()
@@ -122,6 +131,9 @@ func (x *Modbus) TcpPiListen(nb int) (socket int, err error) {
 func (x *Modbus) TcpPiAccept() (err error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_tcp_pi_accept(x.ctx, (*C.int)(unsafe.Pointer(&x.socket)))
 	if code < 0 {
 		return newCError()

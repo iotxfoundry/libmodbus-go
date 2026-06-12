@@ -15,25 +15,22 @@ const (
 	ADDRESS_END   = 99
 )
 
-var (
-	nb                  = ADDRESS_END - ADDRESS_START
-	tab_rq_bits         = make([]uint8, nb)
-	tab_rq_registers    = make([]uint16, nb)
+func inittbl(nb int) (tab_rq_bits []byte, tab_rq_registers []uint16, tab_rw_rq_registers []uint16) {
+	tab_rq_bits = make([]byte, nb)
+	tab_rq_registers = make([]uint16, nb)
 	tab_rw_rq_registers = make([]uint16, nb)
-)
-
-func inittbl() {
 	for i := range nb {
 		tab_rq_registers[i] = uint16(rand.UintN(65535))
 		tab_rw_rq_registers[i] = ^tab_rq_registers[i]
-		tab_rq_bits[i] = uint8(tab_rq_registers[i] % 2)
+		tab_rq_bits[i] = byte(tab_rq_registers[i] % 2)
 	}
+	return
 }
 
-func setup(outChan chan struct{}) {
-	ctx, err := NewTCP("127.0.0.1", 1502)
+func setup(outChan chan struct{}, errChan chan error, port int) {
+	ctx, err := NewTCP("127.0.0.1", port)
 	if err != nil {
-		log.Println("NewTCP error:", err)
+		errChan <- err
 		return
 	}
 	defer ctx.Free()
@@ -43,19 +40,19 @@ func setup(outChan chan struct{}) {
 
 	mbMapping, err := NewMapping(500, 500, 500, 500)
 	if err != nil {
-		log.Println("NewMapping error:", err)
+		errChan <- err
 		return
 	}
 	defer mbMapping.Free()
 	_, err = ctx.TcpListen(1)
 	if err != nil {
-		log.Fatalln(err)
+		errChan <- err
 		return
 	}
 	outChan <- struct{}{}
 	_, err = ctx.TcpAccept()
 	if err != nil {
-		log.Fatalln(err)
+		errChan <- err
 		return
 	}
 
@@ -70,17 +67,22 @@ func setup(outChan chan struct{}) {
 			log.Printf("reply error: %s", err)
 			break
 		}
-		// for k, v := range mbMapping.TabBits() {
-		// 	log.Println(k, v)
-		// }
 	}
 }
 
 func TestModbus_WriteBit(t *testing.T) {
+	nb := ADDRESS_END - ADDRESS_START
 	outChan := make(chan struct{})
-	go setup(outChan)
-	<-outChan
-	ctx, err := NewTCP("127.0.0.1", 1502)
+	errChan := make(chan error, 1)
+	const port = 15020
+	go setup(outChan, errChan, port)
+	select {
+	case <-outChan:
+	case err := <-errChan:
+		t.Error("setup error:", err)
+		t.FailNow()
+	}
+	ctx, err := NewTCP("127.0.0.1", port)
 	if err != nil {
 		t.Error("NewTCP error:", err)
 		t.FailNow()
@@ -96,11 +98,11 @@ func TestModbus_WriteBit(t *testing.T) {
 		t.FailNow()
 	}
 
-	inittbl()
+	tab_rq_bits, _, _ := inittbl(nb)
 
 	addr := ADDRESS_START
 
-	err = ctx.WriteBit(addr, tab_rq_bits[0])
+	err = ctx.WriteBit(addr, tab_rq_bits[0] != 0)
 	if err != nil {
 		t.Errorf("ERROR modbus_write_bit (%s)\n", err)
 		t.Errorf("Address = %d, value = %d\n", addr, tab_rq_bits[0])
@@ -116,10 +118,18 @@ func TestModbus_WriteBit(t *testing.T) {
 }
 
 func TestModbus_WriteBits(t *testing.T) {
+	nb := ADDRESS_END - ADDRESS_START
 	outChan := make(chan struct{})
-	go setup(outChan)
-	<-outChan
-	ctx, err := NewTCP("127.0.0.1", 1502)
+	errChan := make(chan error, 1)
+	const port = 15021
+	go setup(outChan, errChan, port)
+	select {
+	case <-outChan:
+	case err := <-errChan:
+		t.Error("setup error:", err)
+		t.FailNow()
+	}
+	ctx, err := NewTCP("127.0.0.1", port)
 	if err != nil {
 		t.Error("NewTCP error:", err)
 		t.FailNow()
@@ -135,7 +145,7 @@ func TestModbus_WriteBits(t *testing.T) {
 		t.FailNow()
 	}
 
-	inittbl()
+	tab_rq_bits, _, _ := inittbl(nb)
 
 	addr := ADDRESS_START
 
@@ -168,10 +178,18 @@ func TestModbus_WriteBits(t *testing.T) {
 }
 
 func TestModbus_WriteRegister(t *testing.T) {
+	nb := ADDRESS_END - ADDRESS_START
 	outChan := make(chan struct{})
-	go setup(outChan)
-	<-outChan
-	ctx, err := NewTCP("127.0.0.1", 1502)
+	errChan := make(chan error, 1)
+	const port = 15022
+	go setup(outChan, errChan, port)
+	select {
+	case <-outChan:
+	case err := <-errChan:
+		t.Error("setup error:", err)
+		t.FailNow()
+	}
+	ctx, err := NewTCP("127.0.0.1", port)
 	if err != nil {
 		t.Error("NewTCP error:", err)
 		t.FailNow()
@@ -187,7 +205,7 @@ func TestModbus_WriteRegister(t *testing.T) {
 		t.FailNow()
 	}
 
-	inittbl()
+	_, tab_rq_registers, _ := inittbl(nb)
 
 	addr := ADDRESS_START
 
@@ -207,10 +225,18 @@ func TestModbus_WriteRegister(t *testing.T) {
 }
 
 func TestModbus_WriteRegisters(t *testing.T) {
+	nb := ADDRESS_END - ADDRESS_START
 	outChan := make(chan struct{})
-	go setup(outChan)
-	<-outChan
-	ctx, err := NewTCP("127.0.0.1", 1502)
+	errChan := make(chan error, 1)
+	const port = 15023
+	go setup(outChan, errChan, port)
+	select {
+	case <-outChan:
+	case err := <-errChan:
+		t.Error("setup error:", err)
+		t.FailNow()
+	}
+	ctx, err := NewTCP("127.0.0.1", port)
 	if err != nil {
 		t.Error("NewTCP error:", err)
 		t.FailNow()
@@ -226,7 +252,7 @@ func TestModbus_WriteRegisters(t *testing.T) {
 		t.FailNow()
 	}
 
-	inittbl()
+	_, tab_rq_registers, _ := inittbl(nb)
 
 	addr := ADDRESS_START
 
@@ -259,10 +285,18 @@ func TestModbus_WriteRegisters(t *testing.T) {
 }
 
 func TestModbus_WriteAndReadRegisters(t *testing.T) {
+	nb := ADDRESS_END - ADDRESS_START
 	outChan := make(chan struct{})
-	go setup(outChan)
-	<-outChan
-	ctx, err := NewTCP("127.0.0.1", 1502)
+	errChan := make(chan error, 1)
+	const port = 15024
+	go setup(outChan, errChan, port)
+	select {
+	case <-outChan:
+	case err := <-errChan:
+		t.Error("setup error:", err)
+		t.FailNow()
+	}
+	ctx, err := NewTCP("127.0.0.1", port)
 	if err != nil {
 		t.Error("NewTCP error:", err)
 		t.FailNow()
@@ -278,7 +312,7 @@ func TestModbus_WriteAndReadRegisters(t *testing.T) {
 		t.FailNow()
 	}
 
-	inittbl()
+	_, _, tab_rw_rq_registers := inittbl(nb)
 
 	addr := ADDRESS_START
 

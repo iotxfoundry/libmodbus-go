@@ -16,11 +16,13 @@ type TCPServer struct {
 	mapping    *ModbusMapping
 	maxClients int
 	debug      bool
+	slaveID    int
 
 	onConnect    func(addr net.Addr)
 	onDisconnect func(addr net.Addr, err error)
 
 	mu       sync.Mutex
+	closed   bool
 	listener net.Listener
 	files    map[int]*os.File // dupFd -> *os.File (prevent GC of fd)
 	wg       sync.WaitGroup
@@ -35,6 +37,7 @@ func NewTCPServer(addr string, mapping *ModbusMapping) *TCPServer {
 		addr:       addr,
 		mapping:    mapping,
 		maxClients: 10,
+		slaveID:    -1, // -1 means use default (no SetSlave call)
 		files:      make(map[int]*os.File),
 		done:       make(chan struct{}),
 	}
@@ -61,6 +64,13 @@ func (s *TCPServer) SetOnDisconnect(fn func(net.Addr, error)) {
 	s.onDisconnect = fn
 }
 
+// SetSlaveID sets the Modbus slave/unit ID for all client connections.
+// By default, the server uses the libmodbus default (MODBUS_TCP_SLAVE = 0xFF),
+// which responds to all unit IDs. Set a specific ID to filter requests.
+func (s *TCPServer) SetSlaveID(id int) {
+	s.slaveID = id
+}
+
 // Serve starts the TCP server. It blocks until Close is called or a fatal
 // accept error occurs.
 func (s *TCPServer) Serve() error {
@@ -68,7 +78,9 @@ func (s *TCPServer) Serve() error {
 	if err != nil {
 		return fmt.Errorf("modbus: tcp server listen %s: %w", s.addr, err)
 	}
+	s.mu.Lock()
 	s.listener = ln
+	s.mu.Unlock()
 
 	s.sem = make(chan struct{}, s.maxClients)
 
@@ -96,16 +108,19 @@ func (s *TCPServer) Serve() error {
 
 // Close gracefully shuts down the server. It stops accepting new connections,
 // closes all dup'd file descriptors, and waits for all handler goroutines
-// to finish.
+// to finish. It is safe to call Close multiple times.
 func (s *TCPServer) Close() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
 	close(s.done)
-
 	var err error
 	if s.listener != nil {
 		err = s.listener.Close()
 	}
-
-	s.mu.Lock()
 	for fd, file := range s.files {
 		file.Close()
 		delete(s.files, fd)
@@ -166,6 +181,12 @@ func (s *TCPServer) handleConn(conn net.Conn) (err error) {
 
 	if s.debug {
 		ctx.SetDebug(true)
+	}
+
+	if s.slaveID >= 0 {
+		if err := ctx.SetSlave(s.slaveID); err != nil {
+			return fmt.Errorf("modbus: set slave: %w", err)
+		}
 	}
 
 	if err := ctx.SetSocket(dupFd); err != nil {

@@ -183,6 +183,9 @@ func (x *Modbus) SetResponseTimeout(timeout time.Duration) (err error) {
 	if err := x.ensureCtx(); err != nil {
 		return err
 	}
+	if timeout < 0 {
+		return fmt.Errorf("modbus: response timeout must be non-negative, got %v", timeout)
+	}
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_response_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
@@ -229,6 +232,9 @@ func (x *Modbus) SetByteTimeout(timeout time.Duration) (err error) {
 	if err := x.ensureCtx(); err != nil {
 		return err
 	}
+	if timeout < 0 {
+		return fmt.Errorf("modbus: byte timeout must be non-negative, got %v", timeout)
+	}
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_byte_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
@@ -270,6 +276,9 @@ func (x *Modbus) SetIndicationTimeout(timeout time.Duration) (err error) {
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
 		return err
+	}
+	if timeout < 0 {
+		return fmt.Errorf("modbus: indication timeout must be non-negative, got %v", timeout)
 	}
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_indication_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
@@ -493,13 +502,17 @@ func (x *Modbus) ReadInputRegisters(addr int, nb int) (out []uint16, err error) 
 // must be set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x05 (force single coil).
-func (x *Modbus) WriteBit(addr int, status byte) (err error) {
+func (x *Modbus) WriteBit(addr int, status bool) (err error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
 		return err
 	}
-	code := C.modbus_write_bit(x.ctx, C.int(addr), C.int(status))
+	v := C.FALSE
+	if status {
+		v = C.TRUE
+	}
+	code := C.modbus_write_bit(x.ctx, C.int(addr), C.int(v))
 	if code < 0 {
 		return newCError()
 	}
@@ -765,6 +778,7 @@ func (mm *ModbusMapping) UnmarshalJSON(data []byte) error {
 	defer mm.mu.Unlock()
 	if mm.mb != nil {
 		C.modbus_mapping_free(mm.mb)
+		mm.mb = nil
 	}
 	mn := C.modbus_mapping_new_start_address(
 		C.uint(mp.StartBits),
@@ -836,48 +850,72 @@ func (mm *ModbusMapping) tabInputRegistersSlice() []uint16 {
 func (mm *ModbusMapping) NbBits() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.nb_bits)
 }
 
 func (mm *ModbusMapping) StartBits() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.start_bits)
 }
 
 func (mm *ModbusMapping) NbInputBits() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.nb_input_bits)
 }
 
 func (mm *ModbusMapping) StartInputBits() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.start_input_bits)
 }
 
 func (mm *ModbusMapping) NbInputRegisters() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.nb_input_registers)
 }
 
 func (mm *ModbusMapping) StartInputRegisters() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.start_input_registers)
 }
 
 func (mm *ModbusMapping) NbRegisters() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.nb_registers)
 }
 
 func (mm *ModbusMapping) StartRegisters() int {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0
+	}
 	return int(mm.mb.start_registers)
 }
 
@@ -1296,7 +1334,7 @@ func SetInt64ToInt16(value int64) []int16 {
 // The modbus_set_bits_from_byte() function shall set many bits from a single byte. All 8 bits from the byte value will
 // be written to dest array starting at index position.
 func SetBitsFromByte(dest []byte, index int, value byte) error {
-	if len(dest) < index+8 {
+	if index < 0 || index > len(dest)-8 {
 		return fmt.Errorf("modbus: set bits from byte requires dest length >= index+8, got %d", len(dest))
 	}
 	C.modbus_set_bits_from_byte((*C.uint8_t)(unsafe.SliceData(dest)), C.int(index), C.uint8_t(value))
@@ -1311,7 +1349,7 @@ func SetBitsFromBytes(dest []byte, index int, nb uint, tab []byte) error {
 	if int(nb) > len(tab) {
 		return fmt.Errorf("modbus: set bits from bytes requires tab length >= nb, got %d", len(tab))
 	}
-	if len(dest) < index+int(nb) {
+	if index < 0 || (int(nb) > 0 && index > len(dest)-int(nb)) {
 		return fmt.Errorf("modbus: set bits from bytes requires dest length >= index+nb, got %d", len(dest))
 	}
 	C.modbus_set_bits_from_bytes((*C.uint8_t)(unsafe.SliceData(dest)), C.int(index), C.uint(nb), (*C.uint8_t)(unsafe.SliceData(tab)))

@@ -51,7 +51,7 @@ func main() {
 			nb = ADDRESS_END - addr
 
 			// WRITE BIT
-			err = ctx.WriteBit(addr, tab_rq_bits[0])
+			err = ctx.WriteBit(addr, tab_rq_bits[0] != 0)
 			if err != nil {
 				log.Printf("ERROR modbus_write_bit (%s)\n", err)
 				log.Printf("Address = %d, value = %d\n", addr, tab_rq_bits[0])
