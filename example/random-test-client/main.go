@@ -4,7 +4,7 @@ import (
 	"log"
 	"math/rand/v2"
 
-	libmodbusgo "github.com/iotxfoundry/libmodbus-go"
+	"github.com/iotxfoundry/libmodbus-go"
 )
 
 const (
@@ -15,17 +15,17 @@ const (
 )
 
 func main() {
-	ctx := libmodbusgo.ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		log.Println("ModbusNewTcp error")
+	ctx, err := modbus.NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		log.Println("NewTCP error:", err)
 		return
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	err := ctx.Connect()
+	err = ctx.Connect()
 	if err != nil {
 		log.Fatalln(err)
 		return

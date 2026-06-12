@@ -3,28 +3,28 @@ package main
 import (
 	"log"
 
-	libmodbusgo "github.com/iotxfoundry/libmodbus-go"
+	"github.com/iotxfoundry/libmodbus-go"
 )
 
 func main() {
-	ctx := libmodbusgo.ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		log.Println("ModbusNewTcp error")
+	ctx, err := modbus.NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		log.Println("NewTCP error:", err)
 		return
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	mbMapping := libmodbusgo.ModbusMappingNew(500, 500, 500, 500)
-	if mbMapping == nil {
-		log.Println("ModbusMappingNew error")
+	mbMapping, err := modbus.NewMapping(500, 500, 500, 500)
+	if err != nil {
+		log.Println("NewMapping error:", err)
 		return
 	}
 	defer mbMapping.Free()
 
-	_, err := ctx.TcpListen(1)
+	_, err = ctx.TcpListen(1)
 	if err != nil {
 		log.Fatalln(err)
 		return
@@ -36,7 +36,7 @@ func main() {
 	}
 
 	for {
-		req, err := ctx.TcpReceive()
+		req, err := ctx.Receive()
 		if err != nil {
 			log.Printf("receive error: %s", err)
 			break

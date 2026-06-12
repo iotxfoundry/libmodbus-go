@@ -1,4 +1,4 @@
-package libmodbusgo
+package modbus
 
 /*
 #include "modbus.h"
@@ -22,4 +22,10 @@ const (
 	MODBUS_RTU_RTS_DOWN = C.MODBUS_RTU_RTS_DOWN
 )
 
-type SetRtsCallback func(ctx *Modbus, on int)
+// RTSFunc is the callback type for custom RTS pin control in RTU mode.
+type RTSFunc func(ctx *Modbus, on int)
+
+type rtsEntry struct {
+	mb *Modbus
+	fn RTSFunc
+}

@@ -1,4 +1,4 @@
-package libmodbusgo
+package modbus
 
 /*
 #include "modbus.h"
@@ -6,6 +6,7 @@ package libmodbusgo
 import "C"
 import (
 	"fmt"
+	"sync"
 )
 
 // Modbus function codes
@@ -71,32 +72,28 @@ const MODBUS_MAX_ADU_LENGTH = C.MODBUS_MAX_ADU_LENGTH
 // MODBUS_ENOBASE Random number to avoid errno conflicts
 const MODBUS_ENOBASE = C.MODBUS_ENOBASE
 
-// ModbusException Protocol exceptions
-type ModbusException int
+// Exception Protocol exceptions
+type Exception int
 
 const (
-	MODBUS_EXCEPTION_ILLEGAL_FUNCTION        ModbusException = C.MODBUS_EXCEPTION_ILLEGAL_FUNCTION
-	MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS    ModbusException = C.MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS
-	MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE      ModbusException = C.MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE
-	MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE ModbusException = C.MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE
-	MODBUS_EXCEPTION_ACKNOWLEDGE             ModbusException = C.MODBUS_EXCEPTION_ACKNOWLEDGE
-	MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY    ModbusException = C.MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY
-	MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE    ModbusException = C.MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE
-	MODBUS_EXCEPTION_MEMORY_PARITY           ModbusException = C.MODBUS_EXCEPTION_MEMORY_PARITY
-	MODBUS_EXCEPTION_NOT_DEFINED             ModbusException = C.MODBUS_EXCEPTION_NOT_DEFINED
-	MODBUS_EXCEPTION_GATEWAY_PATH            ModbusException = C.MODBUS_EXCEPTION_GATEWAY_PATH
-	MODBUS_EXCEPTION_GATEWAY_TARGET          ModbusException = C.MODBUS_EXCEPTION_GATEWAY_TARGET
-	MODBUS_EXCEPTION_MAX                     ModbusException = C.MODBUS_EXCEPTION_MAX
+	MODBUS_EXCEPTION_ILLEGAL_FUNCTION        Exception = C.MODBUS_EXCEPTION_ILLEGAL_FUNCTION
+	MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS    Exception = C.MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS
+	MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE      Exception = C.MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE
+	MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE Exception = C.MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE
+	MODBUS_EXCEPTION_ACKNOWLEDGE             Exception = C.MODBUS_EXCEPTION_ACKNOWLEDGE
+	MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY    Exception = C.MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY
+	MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE    Exception = C.MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE
+	MODBUS_EXCEPTION_MEMORY_PARITY           Exception = C.MODBUS_EXCEPTION_MEMORY_PARITY
+	MODBUS_EXCEPTION_NOT_DEFINED             Exception = C.MODBUS_EXCEPTION_NOT_DEFINED
+	MODBUS_EXCEPTION_GATEWAY_PATH            Exception = C.MODBUS_EXCEPTION_GATEWAY_PATH
+	MODBUS_EXCEPTION_GATEWAY_TARGET          Exception = C.MODBUS_EXCEPTION_GATEWAY_TARGET
+	MODBUS_EXCEPTION_MAX                     Exception = C.MODBUS_EXCEPTION_MAX
 )
 
 type ErrorCode int
 
-func (c ErrorCode) Error() (e *Error) {
-	msg := C.modbus_strerror(C.int(c))
-	return &Error{
-		code:    c,
-		message: C.GoString(msg),
-	}
+func (c ErrorCode) Error() string {
+	return C.GoString(C.modbus_strerror(C.int(c)))
 }
 
 const (
@@ -123,35 +120,45 @@ const (
 )
 
 var (
-	LibmodbusVersionMajor = C.libmodbus_version_major
-	LibmodbusVersionMinor = C.libmodbus_version_minor
-	LibmodbusVersionMicro = C.libmodbus_version_micro
+	VersionMajor = C.libmodbus_version_major
+	VersionMinor = C.libmodbus_version_minor
+	VersionMicro = C.libmodbus_version_micro
 )
 
 type Modbus struct {
+	mu     sync.Mutex
 	ctx    *C.modbus_t
-	socket int // modbus tcp used
+	socket int
+	closed bool
+}
+
+func (x *Modbus) ensureCtx() error {
+	if x.ctx == nil {
+		return fmt.Errorf("modbus: context is nil (already freed)")
+	}
+	return nil
 }
 
 type ModbusMapping struct {
+	mu sync.Mutex
 	mb *C.modbus_mapping_t
 }
 
-type ModbusErrorRecoveryMode byte
+type ErrorRecoveryMode byte
 
 const (
-	MODBUS_ERROR_RECOVERY_NONE     ModbusErrorRecoveryMode = C.MODBUS_ERROR_RECOVERY_NONE
-	MODBUS_ERROR_RECOVERY_LINK     ModbusErrorRecoveryMode = C.MODBUS_ERROR_RECOVERY_LINK
-	MODBUS_ERROR_RECOVERY_PROTOCOL ModbusErrorRecoveryMode = C.MODBUS_ERROR_RECOVERY_PROTOCOL
+	MODBUS_ERROR_RECOVERY_NONE     ErrorRecoveryMode = C.MODBUS_ERROR_RECOVERY_NONE
+	MODBUS_ERROR_RECOVERY_LINK     ErrorRecoveryMode = C.MODBUS_ERROR_RECOVERY_LINK
+	MODBUS_ERROR_RECOVERY_PROTOCOL ErrorRecoveryMode = C.MODBUS_ERROR_RECOVERY_PROTOCOL
 )
 
-type ModbusQuirks byte
+type Quirks byte
 
 const (
-	MODBUS_QUIRK_NONE               ModbusQuirks = C.MODBUS_QUIRK_NONE
-	MODBUS_QUIRK_MAX_SLAVE          ModbusQuirks = C.MODBUS_QUIRK_MAX_SLAVE
-	MODBUS_QUIRK_REPLY_TO_BROADCAST ModbusQuirks = C.MODBUS_QUIRK_REPLY_TO_BROADCAST
-	MODBUS_QUIRK_ALL                ModbusQuirks = C.MODBUS_QUIRK_ALL
+	MODBUS_QUIRK_NONE               Quirks = C.MODBUS_QUIRK_NONE
+	MODBUS_QUIRK_MAX_SLAVE          Quirks = C.MODBUS_QUIRK_MAX_SLAVE
+	MODBUS_QUIRK_REPLY_TO_BROADCAST Quirks = C.MODBUS_QUIRK_REPLY_TO_BROADCAST
+	MODBUS_QUIRK_ALL                Quirks = C.MODBUS_QUIRK_ALL
 )
 
 type Error struct {
@@ -167,7 +174,7 @@ func (e *Error) Code() ErrorCode {
 	return e.code
 }
 
-type ReportSlaveId struct {
+type SlaveIDReport struct {
 	SlaveId            byte
 	RunIndicatorStatus byte
 	AdditionalData     []byte

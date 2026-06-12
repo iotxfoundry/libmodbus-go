@@ -1,8 +1,8 @@
-package libmodbusgo
+package modbus
 
 import (
 	"bytes"
-	"encoding/gob"
+	"encoding/json"
 	"log"
 	"math/rand/v2"
 	"testing"
@@ -31,23 +31,23 @@ func inittbl() {
 }
 
 func setup(outChan chan struct{}) {
-	ctx := ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		log.Println("ModbusNewTcp error")
+	ctx, err := NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		log.Println("NewTCP error:", err)
 		return
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	mbMapping := ModbusMappingNew(500, 500, 500, 500)
-	if mbMapping == nil {
-		log.Println("ModbusMappingNew error")
+	mbMapping, err := NewMapping(500, 500, 500, 500)
+	if err != nil {
+		log.Println("NewMapping error:", err)
 		return
 	}
 	defer mbMapping.Free()
-	_, err := ctx.TcpListen(1)
+	_, err = ctx.TcpListen(1)
 	if err != nil {
 		log.Fatalln(err)
 		return
@@ -60,7 +60,7 @@ func setup(outChan chan struct{}) {
 	}
 
 	for {
-		req, err := ctx.TcpReceive()
+		req, err := ctx.Receive()
 		if err != nil {
 			log.Printf("receive error: %s", err)
 			break
@@ -80,17 +80,17 @@ func TestModbus_WriteBit(t *testing.T) {
 	outChan := make(chan struct{})
 	go setup(outChan)
 	<-outChan
-	ctx := ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		t.Error("ModbusNewTcp error")
+	ctx, err := NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		t.Error("NewTCP error:", err)
 		t.FailNow()
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	err := ctx.Connect()
+	err = ctx.Connect()
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -119,17 +119,17 @@ func TestModbus_WriteBits(t *testing.T) {
 	outChan := make(chan struct{})
 	go setup(outChan)
 	<-outChan
-	ctx := ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		t.Error("ModbusNewTcp error")
+	ctx, err := NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		t.Error("NewTCP error:", err)
 		t.FailNow()
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	err := ctx.Connect()
+	err = ctx.Connect()
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -171,17 +171,17 @@ func TestModbus_WriteRegister(t *testing.T) {
 	outChan := make(chan struct{})
 	go setup(outChan)
 	<-outChan
-	ctx := ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		t.Error("ModbusNewTcp error")
+	ctx, err := NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		t.Error("NewTCP error:", err)
 		t.FailNow()
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	err := ctx.Connect()
+	err = ctx.Connect()
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -210,17 +210,17 @@ func TestModbus_WriteRegisters(t *testing.T) {
 	outChan := make(chan struct{})
 	go setup(outChan)
 	<-outChan
-	ctx := ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		t.Error("ModbusNewTcp error")
+	ctx, err := NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		t.Error("NewTCP error:", err)
 		t.FailNow()
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	err := ctx.Connect()
+	err = ctx.Connect()
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -247,8 +247,8 @@ func TestModbus_WriteRegisters(t *testing.T) {
 					t.Errorf("ERROR modbus_read_registers\n")
 					t.Errorf("Address = %d, value %d (0x%X) != %d (0x%X)\n",
 						addr,
-						tab_rq_bits[i],
-						tab_rq_bits[i],
+						tab_rq_registers[i],
+						tab_rq_registers[i],
 						out[i],
 						out[i])
 					t.FailNow()
@@ -262,17 +262,17 @@ func TestModbus_WriteAndReadRegisters(t *testing.T) {
 	outChan := make(chan struct{})
 	go setup(outChan)
 	<-outChan
-	ctx := ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		t.Error("ModbusNewTcp error")
+	ctx, err := NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		t.Error("NewTCP error:", err)
 		t.FailNow()
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	err := ctx.Connect()
+	err = ctx.Connect()
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -323,30 +323,46 @@ func TestModbus_WriteAndReadRegisters(t *testing.T) {
 	}
 }
 
-func TestModbus_MarshalBinary(t *testing.T) {
+func TestModbus_MarshalJSON(t *testing.T) {
 	nb := 10
-	mbMapping := ModbusMappingNew(nb, nb, nb, nb)
-	for i := range nb {
-		mbMapping.SetTabBits(i, byte(i%2))
+	mbMapping, err := NewMapping(nb, nb, nb, nb)
+	if err != nil {
+		t.Error("NewMapping error:", err)
+		t.FailNow()
 	}
 	for i := range nb {
-		mbMapping.SetTabInputBits(i, byte((i+1)%2))
+		if err := mbMapping.SetTabBits(i, byte(i%2)); err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
 	}
 	for i := range nb {
-		mbMapping.SetTabInputRegisters(i, uint16(i+1))
+		if err := mbMapping.SetTabInputBits(i, byte((i+1)%2)); err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
 	}
 	for i := range nb {
-		mbMapping.SetTabRegisters(i, uint16(i))
+		if err := mbMapping.SetTabInputRegisters(i, uint16(i+1)); err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+	}
+	for i := range nb {
+		if err := mbMapping.SetTabRegisters(i, uint16(i)); err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
 	}
 	buffer := &bytes.Buffer{}
-	enc := gob.NewEncoder(buffer)
-	err := enc.Encode(mbMapping)
+	enc := json.NewEncoder(buffer)
+	err = enc.Encode(mbMapping)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
 	t.Log(len(buffer.Bytes()))
-	dec := gob.NewDecoder(buffer)
+	dec := json.NewDecoder(buffer)
 	mbMapping = &ModbusMapping{}
 	err = dec.Decode(mbMapping)
 	if err != nil {

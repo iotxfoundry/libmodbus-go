@@ -1,4 +1,4 @@
-package libmodbusgo
+package modbus
 
 /*
 #include "modbus.h"
@@ -9,24 +9,21 @@ extern int get_errno_cgo();
 import "C"
 import (
 	"bytes"
-	"encoding/gob"
-	"errors"
+	"encoding/json"
+	"fmt"
 	"iter"
+	"runtime"
 	"time"
 	"unsafe"
 )
 
-// ModbusStrError modbus_strerror - return the error message
-//
-// The modbus_strerror() function shall return a pointer to an error message string corresponding to
-// the error number specified by the errnum argument. As libmodbus defines additional error
-// numbers over and above those defined by the operating system, applications should use
-// modbus_strerror() in preference to the standard strerror() function.
-func ModbusStrError() error {
-	code := C.get_errno_cgo()
+// newCError creates an Error from the current C errno.
+// MUST be called immediately after the failing C call.
+func newCError() error {
+	errno := C.get_errno_cgo()
 	return &Error{
-		code:    ErrorCode(code),
-		message: C.GoString(C.modbus_strerror(code)),
+		code:    ErrorCode(errno),
+		message: C.GoString(C.modbus_strerror(errno)),
 	}
 }
 
@@ -56,25 +53,32 @@ func ModbusStrError() error {
 // The broadcast address is MODBUS_BROADCAST_ADDRESS. This special value must be use when
 // you want all Modbus devices of the network receive the request.
 func (x *Modbus) SetSlave(slave int) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_set_slave(x.ctx, C.int(slave))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // GetSlave modbus_get_slave - get slave number in the context
 //
 // The modbus_get_slave() function shall get the slave number in the libmodbus context.
 func (x *Modbus) GetSlave() (slave int, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_get_slave(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	slave = int(code)
-	return
+	return int(code), nil
 }
 
 // SetErrorRecovery modbus_set_error_recovery - set the error recovery mode
@@ -101,13 +105,17 @@ func (x *Modbus) GetSlave() (slave int, err error) {
 // The modes are mask values and so they are complementary.
 //
 // It's not recommended to enable error recovery for a Modbus slave/server.
-func (x *Modbus) SetErrorRecovery(errorRecovery ModbusErrorRecoveryMode) (err error) {
+func (x *Modbus) SetErrorRecovery(errorRecovery ErrorRecoveryMode) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_set_error_recovery(x.ctx, C.modbus_error_recovery_mode(errorRecovery))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // Connect modbus_connect - establish a Modbus connection
@@ -115,12 +123,17 @@ func (x *Modbus) SetErrorRecovery(errorRecovery ModbusErrorRecoveryMode) (err er
 // The modbus_connect() function shall establish a connection to a Modbus server, a network or a bus
 // using the context information of libmodbus context given in argument.
 func (x *Modbus) Connect() (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_connect(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	x.closed = false
+	return nil
 }
 
 // SetSocket modbus_set_socket - set socket of the context
@@ -128,25 +141,32 @@ func (x *Modbus) Connect() (err error) {
 // The modbus_set_socket() function shall set the socket or file descriptor in the libmodbus context.
 // This function is useful for managing multiple client connections to the same server.
 func (x *Modbus) SetSocket(s int) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_set_socket(x.ctx, C.int(s))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // GetSocket modbus_get_socket - get the current socket of the context
 //
 // The modbus_get_socket() function shall return the current socket or file descriptor of the libmodbus context.
 func (x *Modbus) GetSocket() (s int, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_get_socket(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	s = int(code)
-	return
+	return int(code), nil
 }
 
 // SetResponseTimeout modbus_set_response_timeout - set timeout for response
@@ -158,13 +178,17 @@ func (x *Modbus) GetSocket() (s int, err error) {
 //
 // The value of to_usec argument must be in the range 0 to 999999.
 func (x *Modbus) SetResponseTimeout(timeout time.Duration) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_response_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // GetResponseTimeout modbus_get_response_timeout - get timeout for response
@@ -172,15 +196,18 @@ func (x *Modbus) SetResponseTimeout(timeout time.Duration) (err error) {
 // The modbus_get_response_timeout() function shall return the timeout interval used to wait for a response
 // in the to_sec and to_usec arguments.
 func (x *Modbus) GetResponseTimeout() (timeout time.Duration, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	to_sec := C.uint32_t(0)
 	to_usec := C.uint32_t(0)
 	code := C.modbus_get_response_timeout(x.ctx, &to_sec, &to_usec)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	timeout = time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond
-	return
+	return time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond, nil
 }
 
 // SetByteTimeout modbus_set_byte_timeout - set timeout between bytes
@@ -197,13 +224,17 @@ func (x *Modbus) GetResponseTimeout() (timeout time.Duration, err error) {
 // response must be received before expiration of the response timeout. When a byte timeout is set,
 // the response timeout is only used to wait for until the first byte of the response.
 func (x *Modbus) SetByteTimeout(timeout time.Duration) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_byte_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // GetByteTimeout modbus_get_byte_timeout - get timeout between bytes
@@ -211,15 +242,18 @@ func (x *Modbus) SetByteTimeout(timeout time.Duration) (err error) {
 // The modbus_get_byte_timeout() function shall store the timeout interval between two
 // consecutive bytes of the same message in the to_sec and to_usec arguments.
 func (x *Modbus) GetByteTimeout() (timeout time.Duration, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	to_sec := C.uint32_t(0)
 	to_usec := C.uint32_t(0)
 	code := C.modbus_get_byte_timeout(x.ctx, &to_sec, &to_usec)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	timeout = time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond
-	return
+	return time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond, nil
 }
 
 // SetIndicationTimeout modbus_set_indication_timeout - set timeout between indications
@@ -232,13 +266,17 @@ func (x *Modbus) GetByteTimeout() (timeout time.Duration, err error) {
 // If both to_sec and to_usec are zero, this timeout will not be used at all. In this case,
 // the server will wait forever.
 func (x *Modbus) SetIndicationTimeout(timeout time.Duration) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	usec := timeout - time.Duration(timeout.Seconds())*time.Second
 	code := C.modbus_set_indication_timeout(x.ctx, C.uint32_t(timeout.Seconds()), C.uint32_t(usec.Microseconds()))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // GetIndicationTimeout modbus_get_indication_timeout - get timeout used to wait for an indication
@@ -250,15 +288,18 @@ func (x *Modbus) SetIndicationTimeout(timeout time.Duration) (err error) {
 //
 // The default value is zero, it means the server will wait forever.
 func (x *Modbus) GetIndicationTimeout() (timeout time.Duration, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	to_sec := C.uint32_t(0)
 	to_usec := C.uint32_t(0)
 	code := C.modbus_get_indication_timeout(x.ctx, &to_sec, &to_usec)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	timeout = time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond
-	return
+	return time.Duration(to_sec)*time.Second + time.Duration(to_usec)*time.Microsecond, nil
 }
 
 // GetHeaderLength modbus_get_header_length - retrieve the current header length
@@ -267,37 +308,51 @@ func (x *Modbus) GetIndicationTimeout() (timeout time.Duration, err error) {
 // the backend. This function is convenient to manipulate a message and so it's limited to
 // low-level operations.
 func (x *Modbus) GetHeaderLength() (length int) {
-	code := C.modbus_get_header_length(x.ctx)
-	length = int(code)
-	return
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0
+	}
+	return int(C.modbus_get_header_length(x.ctx))
 }
 
 // Free modbus_free - free a libmodbus context
 //
 // The modbus_free() function shall free an allocated modbus_t structure.
+// It is safe to call Free multiple times.
 func (x *Modbus) Free() {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if x.ctx == nil {
+		return
+	}
+	mapSetRtsCallback.Delete(unsafe.Pointer(x.ctx))
 	C.modbus_free(x.ctx)
-	mapSetRtsCallback.Range(func(key, value any) bool {
-		cctx, ok := key.(*Modbus)
-		if ok {
-			if cctx == x {
-				mapSetRtsCallback.Delete(key)
-			}
-		}
-		return true
-	})
+	x.ctx = nil
+	runtime.SetFinalizer(x, nil)
 }
 
 // Close modbus_close - close a Modbus connection
 //
 // The modbus_close() function shall close the connection established with the backend set in the context.
-func (x *Modbus) Close() {
-	if x.ctx != nil {
-		C.modbus_close(x.ctx)
+// It is safe to call Close multiple times.
+func (x *Modbus) Close() error {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if x.closed || x.ctx == nil {
+		return nil
 	}
-	if x.socket != 0 {
-		C.close(C.int(x.socket))
-	}
+	C.modbus_close(x.ctx)
+	x.closed = true
+	return nil
+}
+
+// Destroy releases all resources: closes the connection and frees the context.
+// It is safe to call Destroy multiple times.
+// This is the recommended way to clean up a Modbus instance.
+func (x *Modbus) Destroy() {
+	_ = x.Close()
+	x.Free()
 }
 
 // Flush modbus_flush - flush non-transmitted data
@@ -305,12 +360,16 @@ func (x *Modbus) Close() {
 // The modbus_flush() function shall discard data received but not read to the socket or file descriptor associated
 // to the context 'ctx'.
 func (x *Modbus) Flush() (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_flush(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // SetDebug modbus_set_debug - set debug flag of the context
@@ -319,19 +378,23 @@ func (x *Modbus) Flush() (err error) {
 // By default, the boolean flag is set to FALSE. When the flag value is set to TRUE, many verbose messages are
 // displayed on stdout and stderr. For example, this flag is useful to display the bytes of the Modbus messages.
 func (x *Modbus) SetDebug(flag bool) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	f := C.FALSE
 	if flag {
 		f = C.TRUE
 	}
 	code := C.modbus_set_debug(x.ctx, C.int(f))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
-// ReadBits modbus_read_bits - read many bits
+// ReadBits modbus_read_bits - read many bits (coils)
 //
 // The modbus_read_bits() function shall read the status of the nb bits (coils) to the address addr of the remote
 // device. The result of reading is stored in dest array as unsigned bytes (8 bits) set to TRUE or FALSE.
@@ -340,16 +403,18 @@ func (x *Modbus) SetDebug(flag bool) (err error) {
 //
 // The function uses the Modbus function code 0x01 (read coil status).
 func (x *Modbus) ReadBits(addr int, nb int) (out []byte, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	dest := make([]C.uint8_t, nb)
 	code := C.modbus_read_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for _, v := range dest {
-		out = append(out, byte(v))
-	}
-	return
+	out = cUint8ToBytes(dest)
+	return out, nil
 }
 
 // ReadInputBits modbus_read_input_bits - read many input bits
@@ -361,16 +426,18 @@ func (x *Modbus) ReadBits(addr int, nb int) (out []byte, err error) {
 //
 // The function uses the Modbus function code 0x02 (read input status).
 func (x *Modbus) ReadInputBits(addr int, nb int) (out []byte, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	dest := make([]C.uint8_t, nb)
 	code := C.modbus_read_input_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for _, v := range dest {
-		out = append(out, byte(v))
-	}
-	return
+	out = cUint8ToBytes(dest)
+	return out, nil
 }
 
 // ReadRegisters modbus_read_registers - read many registers
@@ -382,16 +449,18 @@ func (x *Modbus) ReadInputBits(addr int, nb int) (out []byte, err error) {
 //
 // The function uses the Modbus function code 0x03 (read holding registers).
 func (x *Modbus) ReadRegisters(addr int, nb int) (out []uint16, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	dest := make([]C.uint16_t, nb)
 	code := C.modbus_read_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for _, v := range dest {
-		out = append(out, uint16(v))
-	}
-	return
+	out = cUint16ToSlice(dest)
+	return out, nil
 }
 
 // ReadInputRegisters modbus_read_input_registers - read many input registers
@@ -404,16 +473,18 @@ func (x *Modbus) ReadRegisters(addr int, nb int) (out []uint16, err error) {
 // The function uses the Modbus function code 0x04 (read input registers). The holding registers and input registers
 // have different historical meaning, but nowadays it's more common to use holding registers only.
 func (x *Modbus) ReadInputRegisters(addr int, nb int) (out []uint16, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	dest := make([]C.uint16_t, nb)
 	code := C.modbus_read_input_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for _, v := range dest {
-		out = append(out, uint16(v))
-	}
-	return
+	out = cUint16ToSlice(dest)
+	return out, nil
 }
 
 // WriteBit modbus_write_bit - write a single bit
@@ -423,27 +494,35 @@ func (x *Modbus) ReadInputRegisters(addr int, nb int) (out []uint16, err error) 
 //
 // The function uses the Modbus function code 0x05 (force single coil).
 func (x *Modbus) WriteBit(addr int, status byte) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_write_bit(x.ctx, C.int(addr), C.int(status))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // WriteRegister modbus_write_register - write a single register
 //
-// he modbus_write_register() function shall write the value of value holding registers at the address addr of the
-// remote evice.
+// The modbus_write_register() function shall write the value of value holding registers at the address addr of the
+// remote device.
 //
-// he function uses the Modbus function code 0x06 (preset single register).
+// The function uses the Modbus function code 0x06 (preset single register).
 func (x *Modbus) WriteRegister(addr int, value uint16) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_write_register(x.ctx, C.int(addr), C.uint16_t(value))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // WriteBits modbus_write_bits - write many bits
@@ -453,17 +532,18 @@ func (x *Modbus) WriteRegister(addr int, value uint16) (err error) {
 //
 // The function uses the Modbus function code 0x0F (force multiple coils).
 func (x *Modbus) WriteBits(addr int, data []byte) (err error) {
-	nb := len(data)
-	dest := make([]C.uint8_t, nb)
-	for k, v := range data {
-		dest[k] = C.uint8_t(v)
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
+	nb := len(data)
+	dest := bytesToCUint8(data)
 	code := C.modbus_write_bits(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // WriteRegisters modbus_write_registers - write many registers
@@ -473,17 +553,18 @@ func (x *Modbus) WriteBits(addr int, data []byte) (err error) {
 //
 // The function uses the Modbus function code 0x10 (preset multiple registers).
 func (x *Modbus) WriteRegisters(addr int, data []uint16) (err error) {
-	nb := len(data)
-	dest := make([]C.uint16_t, nb)
-	for k, v := range data {
-		dest[k] = C.uint16_t(v)
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
+	nb := len(data)
+	dest := uint16ToCUint16(data)
 	code := C.modbus_write_registers(x.ctx, C.int(addr), C.int(nb), unsafe.SliceData(dest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // MaskWriteRegister modbus_mask_write_register - mask a single register
@@ -495,12 +576,16 @@ func (x *Modbus) WriteRegisters(addr int, data []uint16) (err error) {
 //
 // The function uses the Modbus function code 0x16 (mask single register).
 func (x *Modbus) MaskWriteRegister(addr int, andMask uint16, orMask uint16) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_mask_write_register(x.ctx, C.int(addr), C.uint16_t(andMask), C.uint16_t(orMask))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // WriteAndReadRegisters modbus_write_and_read_registers - write and read many registers in a single transaction
@@ -514,24 +599,26 @@ func (x *Modbus) MaskWriteRegister(addr int, andMask uint16, orMask uint16) (err
 //
 // The function uses the Modbus function code 0x17 (write/read registers).
 func (x *Modbus) WriteAndReadRegisters(writeAddr int, src []uint16, readAddr int, readNb int) (dest []uint16, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	writeNb := len(src)
-	csrc := make([]C.uint16_t, writeNb)
-	for k, v := range src {
-		csrc[k] = C.uint16_t(v)
+	if writeNb == 0 || readNb == 0 {
+		return nil, fmt.Errorf("modbus: write and read registers requires non-empty source and positive read count")
 	}
+	csrc := uint16ToCUint16(src)
 	cdest := make([]C.uint16_t, readNb)
-	code := C.modbus_write_and_read_registers(x.ctx, C.int(writeAddr), C.int(writeNb), (*C.uint16_t)(unsafe.Pointer(&csrc[0])), C.int(readAddr), C.int(readNb), (*C.uint16_t)(unsafe.Pointer(&cdest[0])))
+	code := C.modbus_write_and_read_registers(x.ctx, C.int(writeAddr), C.int(writeNb), (*C.uint16_t)(unsafe.SliceData(csrc)), C.int(readAddr), C.int(readNb), (*C.uint16_t)(unsafe.SliceData(cdest)))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for _, v := range cdest {
-		dest = append(dest, uint16(v))
-	}
-	return
+	dest = cUint16ToSlice(cdest)
+	return dest, nil
 }
 
-// ReportSlaveId modbus_report_slave_id - returns a description of the controller
+// ReportSlaveID modbus_report_slave_id - returns a description of the controller
 //
 // The modbus_report_slave_id() function shall send a request to the controller to obtain a description of the
 // controller.
@@ -545,26 +632,30 @@ func (x *Modbus) WriteAndReadRegisters(writeAddr int, src []uint16, readAddr int
 //     string.
 //
 // The function writes at most max_dest bytes from the response to dest so you must ensure that dest is large enough.
-func (x *Modbus) ReportSlaveId() (dest *ReportSlaveId, err error) {
+func (x *Modbus) ReportSlaveID() (dest *SlaveIDReport, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	cdest := make([]C.uint8_t, MODBUS_MAX_PDU_LENGTH)
 	code := C.modbus_report_slave_id(x.ctx, C.int(MODBUS_MAX_PDU_LENGTH), unsafe.SliceData(cdest))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	buff := []byte{}
-	for i := range code {
-		buff = append(buff, byte(cdest[i]))
+	if code < 2 {
+		return nil, fmt.Errorf("modbus: report slave id returned insufficient data (%d bytes)", code)
 	}
-	dest = &ReportSlaveId{
+	buff := cUint8ToBytes(cdest[:code:code])
+	dest = &SlaveIDReport{
 		SlaveId:            buff[0],
 		RunIndicatorStatus: buff[1],
 		AdditionalData:     buff[2:],
 	}
-	return
+	return dest, nil
 }
 
-// ModbusMappingNewStartAddress modbus_mapping_new_start_address - allocate four arrays of bits and
+// NewMappingWithStart modbus_mapping_new_start_address - allocate four arrays of bits and
 // registers accessible from their starting addresses
 //
 // The modbus_mapping_new_start_address() function shall allocate four arrays to store bits, input bits, registers and
@@ -577,23 +668,11 @@ func (x *Modbus) ReportSlaveId() (dest *ReportSlaveId, err error) {
 //
 //	mb_mapping = modbus_mapping_new_start_address(0, 0, 0, 0, 340, 10, 0, 0);
 //
-// The newly created mb_mapping will have the following arrays:
-//
-//   - tab_bits set to NULL
-//   - tab_input_bits set to NULL
-//   - tab_input_registers allocated to store 10 registers (uint16_t)
-//   - tab_registers set to NULL.
-//
-// The clients can read the first register by using the address 340 in its request. On the server side, you should
-// use the first index of the array to set the value at this client address:
-//
-//	mb_mapping->tab_registers[0] = 42;
-//
 // If it isn't necessary to allocate an array for a specific type of data, you can pass the zero value in argument,
 // the associated pointer will be NULL.
 //
 // This function is convenient to handle requests in a Modbus server/slave.
-func ModbusMappingNewStartAddress(
+func NewMappingWithStart(
 	startBits uint,
 	nbBits uint,
 	startInputBits uint,
@@ -602,7 +681,7 @@ func ModbusMappingNewStartAddress(
 	nbRegisters uint,
 	startInputRegisters uint,
 	nbInputRegisters uint,
-) *ModbusMapping {
+) (*ModbusMapping, error) {
 	mn := C.modbus_mapping_new_start_address(
 		C.uint(startBits),
 		C.uint(nbBits),
@@ -614,14 +693,14 @@ func ModbusMappingNewStartAddress(
 		C.uint(nbInputRegisters),
 	)
 	if mn == nil {
-		return nil
+		return nil, newCError()
 	}
-	return &ModbusMapping{
-		mb: mn,
-	}
+	mm := &ModbusMapping{mb: mn}
+	runtime.SetFinalizer(mm, (*ModbusMapping).Free)
+	return mm, nil
 }
 
-// ModbusMappingNew modbus_mapping_new - allocate four arrays of bits and registers
+// NewMapping modbus_mapping_new - allocate four arrays of bits and registers
 //
 // The modbus_mapping_new() function shall allocate four arrays to store bits, input bits, registers and inputs
 // registers. The pointers are stored in modbus_mapping_t structure. All values of the arrays are initialized to zero.
@@ -632,14 +711,14 @@ func ModbusMappingNewStartAddress(
 // the associated pointer will be NULL.
 //
 // This function is convenient to handle requests in a Modbus server/slave.
-func ModbusMappingNew(nbBits int, nbInputBits int, nbRegisters int, nbInputRegisters int) *ModbusMapping {
+func NewMapping(nbBits int, nbInputBits int, nbRegisters int, nbInputRegisters int) (*ModbusMapping, error) {
 	mn := C.modbus_mapping_new(C.int(nbBits), C.int(nbInputBits), C.int(nbRegisters), C.int(nbInputRegisters))
 	if mn == nil {
-		return nil
+		return nil, newCError()
 	}
-	return &ModbusMapping{
-		mb: mn,
-	}
+	mm := &ModbusMapping{mb: mn}
+	runtime.SetFinalizer(mm, (*ModbusMapping).Free)
+	return mm, nil
 }
 
 type mapping struct {
@@ -653,43 +732,37 @@ type mapping struct {
 	Registers           []uint16 `json:"registers"`
 }
 
-func (mm *ModbusMapping) MarshalBinary() (buff []byte, err error) {
+// MarshalJSON implements json.Marshaler for ModbusMapping.
+func (mm *ModbusMapping) MarshalJSON() ([]byte, error) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return nil, fmt.Errorf("modbus: mapping is nil")
+	}
 	mp := &mapping{
-		StartBits:           mm.StartBits(),
-		StartInputBits:      mm.StartInputBits(),
-		StartInputRegisters: mm.StartInputRegisters(),
-		StartRegisters:      mm.StartRegisters(),
+		StartBits:           mm.startBits(),
+		StartInputBits:      mm.startInputBits(),
+		StartInputRegisters: mm.startInputRegisters(),
+		StartRegisters:      mm.startRegisters(),
 	}
-	for _, v := range mm.TabBits() {
-		mp.Bits = append(mp.Bits, v)
-	}
-	for _, v := range mm.TabInputBits() {
-		mp.InputBits = append(mp.InputBits, v)
-	}
-	for _, v := range mm.TabInputRegisters() {
-		mp.InputRegisters = append(mp.InputRegisters, v)
-	}
-	for _, v := range mm.TabRegisters() {
-		mp.Registers = append(mp.Registers, v)
-	}
-	buffer := &bytes.Buffer{}
-	enc := gob.NewEncoder(buffer)
-	err = enc.Encode(mp)
-	if err != nil {
-		return
-	}
-	buff = buffer.Bytes()
-	return
+	mp.Bits = mm.tabBitsSlice()
+	mp.InputBits = mm.tabInputBitsSlice()
+	mp.InputRegisters = mm.tabInputRegistersSlice()
+	mp.Registers = mm.tabRegistersSlice()
+	return json.Marshal(mp)
 }
 
-func (mm *ModbusMapping) UnmarshalBinary(data []byte) (err error) {
+// UnmarshalJSON implements json.Unmarshaler for ModbusMapping.
+func (mm *ModbusMapping) UnmarshalJSON(data []byte) error {
 	mp := &mapping{}
 	buffer := bytes.NewBuffer(data)
-	dec := gob.NewDecoder(buffer)
-	err = dec.Decode(mp)
+	dec := json.NewDecoder(buffer)
+	err := dec.Decode(mp)
 	if err != nil {
-		return
+		return err
 	}
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	if mm.mb != nil {
 		C.modbus_mapping_free(mm.mb)
 	}
@@ -704,147 +777,320 @@ func (mm *ModbusMapping) UnmarshalBinary(data []byte) (err error) {
 		C.uint(len(mp.InputRegisters)),
 	)
 	if mn == nil {
-		err = errors.New("new modbus mapping error")
-		return
+		return fmt.Errorf("modbus: new mapping error")
 	}
 	mm.mb = mn
+	runtime.SetFinalizer(mm, (*ModbusMapping).Free)
 	for k, v := range mp.Bits {
-		mm.SetTabBits(mp.StartBits+k, v)
+		tab := unsafe.Slice(mm.mb.tab_bits, int(mm.mb.nb_bits))
+		tab[k] = C.uint8_t(v)
 	}
 	for k, v := range mp.InputBits {
-		mm.SetTabInputBits(mp.StartInputBits+k, v)
+		tab := unsafe.Slice(mm.mb.tab_input_bits, int(mm.mb.nb_input_bits))
+		tab[k] = C.uint8_t(v)
 	}
 	for k, v := range mp.Registers {
-		mm.SetTabRegisters(mp.StartRegisters+k, v)
+		tab := unsafe.Slice(mm.mb.tab_registers, int(mm.mb.nb_registers))
+		tab[k] = C.uint16_t(v)
 	}
 	for k, v := range mp.InputRegisters {
-		mm.SetTabInputRegisters(mp.StartInputRegisters+k, v)
+		tab := unsafe.Slice(mm.mb.tab_input_registers, int(mm.mb.nb_input_registers))
+		tab[k] = C.uint16_t(v)
 	}
-	return
+	return nil
 }
 
+// helper methods for internal use (must be called with lock held)
+
+func (mm *ModbusMapping) startBits() int           { return int(mm.mb.start_bits) }
+func (mm *ModbusMapping) startInputBits() int      { return int(mm.mb.start_input_bits) }
+func (mm *ModbusMapping) startInputRegisters() int { return int(mm.mb.start_input_registers) }
+func (mm *ModbusMapping) startRegisters() int      { return int(mm.mb.start_registers) }
+
+func (mm *ModbusMapping) tabBitsSlice() []byte {
+	n := int(mm.mb.nb_bits)
+	tab := unsafe.Slice(mm.mb.tab_bits, n)
+	return cUint8ToBytes(tab)
+}
+
+func (mm *ModbusMapping) tabInputBitsSlice() []byte {
+	n := int(mm.mb.nb_input_bits)
+	tab := unsafe.Slice(mm.mb.tab_input_bits, n)
+	return cUint8ToBytes(tab)
+}
+
+func (mm *ModbusMapping) tabRegistersSlice() []uint16 {
+	n := int(mm.mb.nb_registers)
+	tab := unsafe.Slice(mm.mb.tab_registers, n)
+	return cUint16ToSlice(tab)
+}
+
+func (mm *ModbusMapping) tabInputRegistersSlice() []uint16 {
+	n := int(mm.mb.nb_input_registers)
+	tab := unsafe.Slice(mm.mb.tab_input_registers, n)
+	return cUint16ToSlice(tab)
+}
+
+// Public accessors
+
 func (mm *ModbusMapping) NbBits() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.nb_bits)
 }
 
 func (mm *ModbusMapping) StartBits() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.start_bits)
 }
 
 func (mm *ModbusMapping) NbInputBits() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.nb_input_bits)
 }
 
 func (mm *ModbusMapping) StartInputBits() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.start_input_bits)
 }
 
 func (mm *ModbusMapping) NbInputRegisters() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.nb_input_registers)
 }
 
 func (mm *ModbusMapping) StartInputRegisters() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.start_input_registers)
 }
 
 func (mm *ModbusMapping) NbRegisters() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.nb_registers)
 }
 
 func (mm *ModbusMapping) StartRegisters() int {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	return int(mm.mb.start_registers)
 }
 
+// TabBits returns an iterator over all bits with their absolute addresses.
+// The iteration uses a snapshot so it is safe against concurrent modifications.
 func (mm *ModbusMapping) TabBits() iter.Seq2[int, byte] {
+	mm.mu.Lock()
+	if mm.mb == nil {
+		mm.mu.Unlock()
+		return func(yield func(int, byte) bool) {}
+	}
+	start := int(mm.mb.start_bits)
+	snap := mm.tabBitsSlice()
+	mm.mu.Unlock()
 	return func(yield func(int, byte) bool) {
-		tab := unsafe.Slice(mm.mb.tab_bits, mm.NbBits())
-		for k, v := range tab {
-			if !yield(int(mm.StartBits()+k), byte(v)) {
+		for k, v := range snap {
+			if !yield(start+k, v) {
 				return
 			}
 		}
 	}
 }
 
-func (mm *ModbusMapping) GetTabBits(addr int) byte {
-	tab := unsafe.Slice(mm.mb.tab_bits, mm.NbBits())
-	return byte(tab[addr-mm.StartBits()])
+func (mm *ModbusMapping) GetTabBits(addr int) (byte, error) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0, fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_bits)
+	if offset < 0 || offset >= int(mm.mb.nb_bits) {
+		return 0, fmt.Errorf("modbus: bits address %d out of range [%d, %d)", addr, int(mm.mb.start_bits), int(mm.mb.start_bits)+int(mm.mb.nb_bits))
+	}
+	tab := unsafe.Slice(mm.mb.tab_bits, int(mm.mb.nb_bits))
+	return byte(tab[offset]), nil
 }
 
-func (mm *ModbusMapping) SetTabBits(addr int, v byte) {
-	tab := unsafe.Slice(mm.mb.tab_bits, mm.NbBits())
-	tab[addr-mm.StartBits()] = C.uint8_t(v)
+func (mm *ModbusMapping) SetTabBits(addr int, v byte) error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_bits)
+	if offset < 0 || offset >= int(mm.mb.nb_bits) {
+		return fmt.Errorf("modbus: bits address %d out of range [%d, %d)", addr, int(mm.mb.start_bits), int(mm.mb.start_bits)+int(mm.mb.nb_bits))
+	}
+	tab := unsafe.Slice(mm.mb.tab_bits, int(mm.mb.nb_bits))
+	tab[offset] = C.uint8_t(v)
+	return nil
 }
 
+// TabInputBits returns an iterator over all input bits with their absolute addresses.
+// The iteration uses a snapshot so it is safe against concurrent modifications.
 func (mm *ModbusMapping) TabInputBits() iter.Seq2[int, byte] {
+	mm.mu.Lock()
+	if mm.mb == nil {
+		mm.mu.Unlock()
+		return func(yield func(int, byte) bool) {}
+	}
+	start := int(mm.mb.start_input_bits)
+	snap := mm.tabInputBitsSlice()
+	mm.mu.Unlock()
 	return func(yield func(int, byte) bool) {
-		tab := unsafe.Slice(mm.mb.tab_input_bits, mm.NbInputBits())
-		for k, v := range tab {
-			if !yield(int(mm.StartInputBits()+k), byte(v)) {
+		for k, v := range snap {
+			if !yield(start+k, v) {
 				return
 			}
 		}
 	}
 }
 
-func (mm *ModbusMapping) GetTabInputBits(addr int) byte {
-	tab := unsafe.Slice(mm.mb.tab_input_bits, mm.NbInputBits())
-	return byte(tab[addr-mm.StartInputBits()])
+func (mm *ModbusMapping) GetTabInputBits(addr int) (byte, error) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0, fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_input_bits)
+	if offset < 0 || offset >= int(mm.mb.nb_input_bits) {
+		return 0, fmt.Errorf("modbus: input bits address %d out of range [%d, %d)", addr, int(mm.mb.start_input_bits), int(mm.mb.start_input_bits)+int(mm.mb.nb_input_bits))
+	}
+	tab := unsafe.Slice(mm.mb.tab_input_bits, int(mm.mb.nb_input_bits))
+	return byte(tab[offset]), nil
 }
 
-func (mm *ModbusMapping) SetTabInputBits(addr int, v byte) {
-	tab := unsafe.Slice(mm.mb.tab_input_bits, mm.NbInputBits())
-	tab[addr-mm.StartInputBits()] = C.uint8_t(v)
+func (mm *ModbusMapping) SetTabInputBits(addr int, v byte) error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_input_bits)
+	if offset < 0 || offset >= int(mm.mb.nb_input_bits) {
+		return fmt.Errorf("modbus: input bits address %d out of range [%d, %d)", addr, int(mm.mb.start_input_bits), int(mm.mb.start_input_bits)+int(mm.mb.nb_input_bits))
+	}
+	tab := unsafe.Slice(mm.mb.tab_input_bits, int(mm.mb.nb_input_bits))
+	tab[offset] = C.uint8_t(v)
+	return nil
 }
 
+// TabInputRegisters returns an iterator over all input registers with their absolute addresses.
+// The iteration uses a snapshot so it is safe against concurrent modifications.
 func (mm *ModbusMapping) TabInputRegisters() iter.Seq2[int, uint16] {
+	mm.mu.Lock()
+	if mm.mb == nil {
+		mm.mu.Unlock()
+		return func(yield func(int, uint16) bool) {}
+	}
+	start := int(mm.mb.start_input_registers)
+	snap := mm.tabInputRegistersSlice()
+	mm.mu.Unlock()
 	return func(yield func(int, uint16) bool) {
-		tab := unsafe.Slice(mm.mb.tab_input_registers, mm.NbInputRegisters())
-		for k, v := range tab {
-			if !yield(int(mm.StartInputRegisters()+k), uint16(v)) {
+		for k, v := range snap {
+			if !yield(start+k, v) {
 				return
 			}
 		}
 	}
 }
 
-func (mm *ModbusMapping) GetTabInputRegisters(addr int) uint16 {
-	tab := unsafe.Slice(mm.mb.tab_input_registers, mm.NbInputRegisters())
-	return uint16(tab[addr-mm.StartInputRegisters()])
+func (mm *ModbusMapping) GetTabInputRegisters(addr int) (uint16, error) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0, fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_input_registers)
+	if offset < 0 || offset >= int(mm.mb.nb_input_registers) {
+		return 0, fmt.Errorf("modbus: input registers address %d out of range [%d, %d)", addr, int(mm.mb.start_input_registers), int(mm.mb.start_input_registers)+int(mm.mb.nb_input_registers))
+	}
+	tab := unsafe.Slice(mm.mb.tab_input_registers, int(mm.mb.nb_input_registers))
+	return uint16(tab[offset]), nil
 }
 
-func (mm *ModbusMapping) SetTabInputRegisters(addr int, v uint16) {
-	tab := unsafe.Slice(mm.mb.tab_input_registers, mm.NbInputRegisters())
-	tab[addr-mm.StartInputRegisters()] = C.uint16_t(v)
+func (mm *ModbusMapping) SetTabInputRegisters(addr int, v uint16) error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_input_registers)
+	if offset < 0 || offset >= int(mm.mb.nb_input_registers) {
+		return fmt.Errorf("modbus: input registers address %d out of range [%d, %d)", addr, int(mm.mb.start_input_registers), int(mm.mb.start_input_registers)+int(mm.mb.nb_input_registers))
+	}
+	tab := unsafe.Slice(mm.mb.tab_input_registers, int(mm.mb.nb_input_registers))
+	tab[offset] = C.uint16_t(v)
+	return nil
 }
 
+// TabRegisters returns an iterator over all registers with their absolute addresses.
+// The iteration uses a snapshot so it is safe against concurrent modifications.
 func (mm *ModbusMapping) TabRegisters() iter.Seq2[int, uint16] {
+	mm.mu.Lock()
+	if mm.mb == nil {
+		mm.mu.Unlock()
+		return func(yield func(int, uint16) bool) {}
+	}
+	start := int(mm.mb.start_registers)
+	snap := mm.tabRegistersSlice()
+	mm.mu.Unlock()
 	return func(yield func(int, uint16) bool) {
-		tab := unsafe.Slice(mm.mb.tab_registers, mm.NbRegisters())
-		for k, v := range tab {
-			if !yield(int(mm.StartRegisters()+k), uint16(v)) {
+		for k, v := range snap {
+			if !yield(start+k, v) {
 				return
 			}
 		}
 	}
 }
 
-func (mm *ModbusMapping) GetTabRegisters(addr int) uint16 {
-	tab := unsafe.Slice(mm.mb.tab_registers, mm.NbRegisters())
-	return uint16(tab[addr-mm.StartRegisters()])
+func (mm *ModbusMapping) GetTabRegisters(addr int) (uint16, error) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return 0, fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_registers)
+	if offset < 0 || offset >= int(mm.mb.nb_registers) {
+		return 0, fmt.Errorf("modbus: registers address %d out of range [%d, %d)", addr, int(mm.mb.start_registers), int(mm.mb.start_registers)+int(mm.mb.nb_registers))
+	}
+	tab := unsafe.Slice(mm.mb.tab_registers, int(mm.mb.nb_registers))
+	return uint16(tab[offset]), nil
 }
 
-func (mm *ModbusMapping) SetTabRegisters(addr int, v uint16) {
-	tab := unsafe.Slice(mm.mb.tab_registers, mm.NbRegisters())
-	tab[addr-mm.StartRegisters()] = C.uint16_t(v)
+func (mm *ModbusMapping) SetTabRegisters(addr int, v uint16) error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return fmt.Errorf("modbus: mapping is nil")
+	}
+	offset := addr - int(mm.mb.start_registers)
+	if offset < 0 || offset >= int(mm.mb.nb_registers) {
+		return fmt.Errorf("modbus: registers address %d out of range [%d, %d)", addr, int(mm.mb.start_registers), int(mm.mb.start_registers)+int(mm.mb.nb_registers))
+	}
+	tab := unsafe.Slice(mm.mb.tab_registers, int(mm.mb.nb_registers))
+	tab[offset] = C.uint16_t(v)
+	return nil
 }
 
 // Free modbus_mapping_free - free a modbus_mapping_t structure
 //
 // The function shall free the four arrays of modbus_mapping_t structure and finally the modbus_mapping_t itself
 // referenced by mb_mapping.
+// It is safe to call Free multiple times.
 func (mm *ModbusMapping) Free() {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if mm.mb == nil {
+		return
+	}
 	C.modbus_mapping_free(mm.mb)
+	mm.mb = nil
+	runtime.SetFinalizer(mm, nil)
 }
 
 // SendRawRequest modbus_send_raw_request - send a raw request
@@ -857,29 +1103,32 @@ func (mm *ModbusMapping) Free() {
 // The public header of libmodbus provides a list of supported Modbus functions codes, prefixed by MODBUS_FC_ (eg.
 // MODBUS_FC_READ_HOLDING_REGISTERS), to help build of raw requests.
 func (x *Modbus) SendRawRequest(raw []byte) (err error) {
-	req := []C.uint8_t{}
-	for _, v := range raw {
-		req = append(req, C.uint8_t(v))
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
+	req := bytesToCUint8(raw)
 	code := C.modbus_send_raw_request(x.ctx, unsafe.SliceData(req), C.int(len(raw)))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
+// SendRawRequestTid sends a raw request with a specific transaction ID.
 func (x *Modbus) SendRawRequestTid(raw []byte, tid int) (err error) {
-	req := []C.uint8_t{}
-	for _, v := range raw {
-		req = append(req, C.uint8_t(v))
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
+	req := bytesToCUint8(raw)
 	code := C.modbus_send_raw_request_tid(x.ctx, unsafe.SliceData(req), C.int(len(raw)), C.int(tid))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // Receive modbus_receive - receive an indication request
@@ -890,16 +1139,18 @@ func (x *Modbus) SendRawRequestTid(raw []byte, tid int) (err error) {
 // If you need to use another socket or file descriptor than the one defined in the context ctx, see the function
 // modbus_set_socket.
 func (x *Modbus) Receive() (req []byte, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	recv := make([]C.uint8_t, MODBUS_MAX_ADU_LENGTH)
 	code := C.modbus_receive(x.ctx, unsafe.SliceData(recv))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for i := range code {
-		req = append(req, byte(recv[i]))
-	}
-	return
+	req = cUint8ToBytes(recv[:code:code])
+	return req, nil
 }
 
 // ReceiveConfirmation modbus_receive_confirmation - receive a confirmation request
@@ -913,18 +1164,21 @@ func (x *Modbus) Receive() (req []byte, err error) {
 // use the constant MODBUS_MAX_ADU_LENGTH (maximum value of all libmodbus backends). Take care to allocate enough
 // memory to store responses to avoid crashes of your server.
 func (x *Modbus) ReceiveConfirmation() (rsp []byte, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
 	recv := make([]C.uint8_t, MODBUS_MAX_ADU_LENGTH)
 	code := C.modbus_receive_confirmation(x.ctx, unsafe.SliceData(recv))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return nil, newCError()
 	}
-	for i := range code {
-		rsp = append(rsp, byte(recv[i]))
-	}
-	return
+	rsp = cUint8ToBytes(recv[:code:code])
+	return rsp, nil
 }
 
+// Lock ordering: Modbus.mu must be acquired before ModbusMapping.mu.
 // Reply modbus_reply - send a response to the received request
 //
 // The modbus_reply() function shall send a response to received request. The request req given in argument is
@@ -937,230 +1191,264 @@ func (x *Modbus) ReceiveConfirmation() (rsp []byte, err error) {
 //
 // This function is designed for Modbus servers.
 func (x *Modbus) Reply(req []byte, mm *ModbusMapping) (err error) {
-	raw := []C.uint8_t{}
-	for _, v := range req {
-		raw = append(raw, C.uint8_t(v))
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
+	raw := bytesToCUint8(req)
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 	code := C.modbus_reply(x.ctx, unsafe.SliceData(raw), C.int(len(req)), mm.mb)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // ReplyException modbus_reply_exception - send an exception response
 //
 // The modbus_reply_exception() function shall send an exception response based on the 'exception_code' in argument.
-//
-// The libmodbus provides the following exception codes:
-//
-//   - MODBUS_EXCEPTION_ILLEGAL_FUNCTION (1)
-//   - MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS (2)
-//   - MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE (3)
-//   - MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE (4)
-//   - MODBUS_EXCEPTION_ACKNOWLEDGE (5)
-//   - MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY (6)
-//   - MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE (7)
-//   - MODBUS_EXCEPTION_MEMORY_PARITY (8)
-//   - MODBUS_EXCEPTION_NOT_DEFINED (9)
-//   - MODBUS_EXCEPTION_GATEWAY_PATH (10)
-//   - MODBUS_EXCEPTION_GATEWAY_TARGET (11)
-//
-// The initial request req is required to build a valid response.
 func (x *Modbus) ReplyException(req []byte, ecode uint) (err error) {
-	raw := []C.uint8_t{}
-	for _, v := range req {
-		raw = append(raw, C.uint8_t(v))
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
+	raw := bytesToCUint8(req)
 	code := C.modbus_reply_exception(x.ctx, unsafe.SliceData(raw), C.uint(ecode))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // EnableQuirks modbus_enable_quirks - enable a list of quirks according to a mask
-//
-// The function is only useful when you are confronted with equipment which does not respect the protocol, which
-// behaves strangely or when you wish to move away from the standard.
-//
-// In that case, you can enable a specific quirk to workaround the issue, libmodbus offers the following flags:
-//
-//   - MODBUS_QUIRK_MAX_SLAVE allows slave adresses between 247 and 255.
-//   - MODBUS_QUIRK_REPLY_TO_BROADCAST force a reply to a broacast request when the device is a slave in RTU mode
-//     (should be enabled on the slave device).
-//
-// You can combine the flags by using the bitwise OR operator.
-func (x *Modbus) EnableQuirks(quirksMask ModbusQuirks) (err error) {
+func (x *Modbus) EnableQuirks(quirksMask Quirks) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_enable_quirks(x.ctx, C.uint(quirksMask))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // DisableQuirks modbus_disable_quirks - disable a list of quirks according to a mask
-//
-// The function shall disable the quirks according to the provided mask. It's useful to revert changes applied by a
-// previous call to modbus_enable_quirks
-//
-// To reset all quirks, you can use the specific value MODBUS_QUIRK_ALL.
-//
-//	modbus_enable_quirks(ctx, MODBUS_QUIRK_MAX_SLAVE | MODBUS_QUIRK_REPLY_TO_BROADCAST);
-//
-//	...
-//
-//	// Reset all quirks
-//	modbus_disable_quirks(ctx, MODBUS_QUIRK_ALL);
-func (x *Modbus) DisableQuirks(quirksMask ModbusQuirks) (err error) {
+func (x *Modbus) DisableQuirks(quirksMask Quirks) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_disable_quirks(x.ctx, C.uint(quirksMask))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
-func ModbusGetHighByte[T int16 | uint16 | int32 | uint32 | int64 | uint64](data T) byte {
+// GetHighByte returns the high byte of a 16-bit or wider integer.
+func GetHighByte[T int16 | uint16 | int32 | uint32 | int64 | uint64](data T) byte {
 	return byte((uint64(data) >> 8) & 0xFF)
 }
 
-func ModbusGetLowByte[T int16 | uint16 | int32 | uint32 | int64 | uint64](data T) byte {
+// GetLowByte returns the low byte of a 16-bit or wider integer.
+func GetLowByte[T int16 | uint16 | int32 | uint32 | int64 | uint64](data T) byte {
 	return byte(uint64(data) & 0xFF)
 }
 
-func ModbusGetInt64FromInt16(tab []int16) int64 {
+// GetInt64FromInt16 converts 4 int16 values to int64 (big-endian).
+func GetInt64FromInt16(tab []int16) int64 {
 	return int64(tab[0])<<48 | int64(tab[1])<<32 | int64(tab[2])<<16 | int64(tab[3])
 }
 
-func ModbusGetInt32FromInt16(tab []int16) int32 {
+// GetInt32FromInt16 converts 2 int16 values to int32 (big-endian).
+func GetInt32FromInt16(tab []int16) int32 {
 	return int32(tab[0])<<16 | int32(tab[1])
 }
 
-func ModbusGetInt16FromInt8(tab []int8) int16 {
+// GetInt16FromInt8 converts 2 int8 values to int16 (big-endian).
+func GetInt16FromInt8(tab []int8) int16 {
 	return int16(tab[0])<<8 | int16(tab[1])
 }
 
-func ModbusSetInt16ToInt8(value int16) []int8 {
+// SetInt16ToInt8 converts an int16 to 2 int8 values (big-endian).
+func SetInt16ToInt8(value int16) []int8 {
 	return []int8{int8(value >> 8), int8(value)}
 }
 
-func ModbusSetInt32ToInt16(value int32) []int16 {
+// SetInt32ToInt16 converts an int32 to 2 int16 values (big-endian).
+func SetInt32ToInt16(value int32) []int16 {
 	return []int16{int16(value >> 16), int16(value)}
 }
 
-func ModbusSetInt64ToInt16(value int64) []int16 {
+// SetInt64ToInt16 converts an int64 to 4 int16 values (big-endian).
+func SetInt64ToInt16(value int64) []int16 {
 	return []int16{int16(value >> 48), int16(value >> 32), int16(value >> 16), int16(value)}
 }
 
-// ModbusSetBitsFromByte modbus_set_bits_from_byte - set many bits from a single byte value
+// SetBitsFromByte modbus_set_bits_from_byte - set many bits from a single byte value
 //
 // The modbus_set_bits_from_byte() function shall set many bits from a single byte. All 8 bits from the byte value will
 // be written to dest array starting at index position.
-func ModbusSetBitsFromByte(dest []byte, index int, value byte) {
+func SetBitsFromByte(dest []byte, index int, value byte) error {
+	if len(dest) < index+8 {
+		return fmt.Errorf("modbus: set bits from byte requires dest length >= index+8, got %d", len(dest))
+	}
 	C.modbus_set_bits_from_byte((*C.uint8_t)(unsafe.SliceData(dest)), C.int(index), C.uint8_t(value))
+	return nil
 }
 
-// ModbusSetBitsFromBytes modbus_set_bits_from_bytes - set many bits from an array of bytes
+// SetBitsFromBytes modbus_set_bits_from_bytes - set many bits from an array of bytes
 //
 // The modbus_set_bits_from_bytes function shall set bits by reading an array of bytes. All the bits of the bytes read
 // from the first position of the array tab_byte are written as bits in the dest array starting at position index.
-func ModbusSetBitsFromBytes(dest []byte, index int, nb uint, tab []byte) {
+func SetBitsFromBytes(dest []byte, index int, nb uint, tab []byte) error {
+	if int(nb) > len(tab) {
+		return fmt.Errorf("modbus: set bits from bytes requires tab length >= nb, got %d", len(tab))
+	}
+	if len(dest) < index+int(nb) {
+		return fmt.Errorf("modbus: set bits from bytes requires dest length >= index+nb, got %d", len(dest))
+	}
 	C.modbus_set_bits_from_bytes((*C.uint8_t)(unsafe.SliceData(dest)), C.int(index), C.uint(nb), (*C.uint8_t)(unsafe.SliceData(tab)))
+	return nil
 }
 
-// ModbusGetByteFromBits modbus_get_byte_from_bits - get the value from many bits
+// GetByteFromBits modbus_get_byte_from_bits - get the value from many bits
 //
 // The modbus_get_byte_from_bits() function shall extract a value from many bits. All nb_bits bits from src at position
 // index will be read as a single value. To obtain a full byte, set nb_bits to 8.
-func ModbusGetByteFromBits(src []byte, index int, nb uint) byte {
-	return byte(C.modbus_get_byte_from_bits((*C.uint8_t)(unsafe.SliceData(src)), C.int(index), C.uint(nb)))
+func GetByteFromBits(src []byte, index int, nb uint) (byte, error) {
+	if int(nb) > 8 {
+		return 0, fmt.Errorf("modbus: get byte from bits requires nb <= 8, got %d", nb)
+	}
+	if len(src) < index+int(nb) {
+		return 0, fmt.Errorf("modbus: get byte from bits requires src length >= index+nb, got %d", len(src))
+	}
+	return byte(C.modbus_get_byte_from_bits((*C.uint8_t)(unsafe.SliceData(src)), C.int(index), C.uint(nb))), nil
 }
 
-// ModbusGetFloat modbus_get_float - get a float value from 2 registers
-//
-// The modbus_get_float() function shall get a float from 4 bytes in Modbus format (DCBA byte order). The src array
-// must be a pointer on two 16 bits values, for example, if the first word is set to 0x4465 and the second to 0x229a,
-// the float value will be 916.540649.
-func ModbusGetFloat(src []uint16) float32 {
-	return float32(C.modbus_get_float((*C.uint16_t)(unsafe.SliceData(src))))
+// DecodeFloat modbus_get_float - get a float value from 2 registers (DCBA byte order)
+func DecodeFloat(src []uint16) (float32, error) {
+	if len(src) < 2 {
+		return 0, fmt.Errorf("modbus: decode float requires at least 2 registers, got %d", len(src))
+	}
+	return float32(C.modbus_get_float((*C.uint16_t)(unsafe.SliceData(src)))), nil
 }
 
-// ModbusGetFloatAbcd modbus_get_float_abcd - get a float value from 2 registers in ABCD byte order
-//
-// The modbus_get_float_abcd() function shall get a float from 4 bytes in usual Modbus format. The src array must be a
-// pointer on two 16 bits values, for example, if the first word is set to 0x0020 and the second to 0xF147, the float
-// value will be read as 123456.0.
-func ModbusGetFloatAbcd(src []uint16) float32 {
-	return float32(C.modbus_get_float_abcd((*C.uint16_t)(unsafe.SliceData(src))))
+// DecodeFloatABCD modbus_get_float_abcd - get a float value from 2 registers in ABCD byte order
+func DecodeFloatABCD(src []uint16) (float32, error) {
+	if len(src) < 2 {
+		return 0, fmt.Errorf("modbus: decode float requires at least 2 registers, got %d", len(src))
+	}
+	return float32(C.modbus_get_float_abcd((*C.uint16_t)(unsafe.SliceData(src)))), nil
 }
 
-// ModbusGetFloatDcba modbus_get_float_dcba - get a float value from 2 registers in DCBA byte order
-//
-// The modbus_get_float_dcba() function shall get a float from 4 bytes in inverted Modbus format (DCBA order instead of
-// ABCD). The src array must be a pointer on two 16 bits values, for example, if the first word is set to 0x47F1 and
-// the second to 0x2000, the float value will be read as 123456.0.
-func ModbusGetFloatDcba(src []uint16) float32 {
-	return float32(C.modbus_get_float_dcba((*C.uint16_t)(unsafe.SliceData(src))))
+// DecodeFloatDCBA modbus_get_float_dcba - get a float value from 2 registers in DCBA byte order
+func DecodeFloatDCBA(src []uint16) (float32, error) {
+	if len(src) < 2 {
+		return 0, fmt.Errorf("modbus: decode float requires at least 2 registers, got %d", len(src))
+	}
+	return float32(C.modbus_get_float_dcba((*C.uint16_t)(unsafe.SliceData(src)))), nil
 }
 
-// ModbusGetFloatBadc modbus_get_float_badc - get a float value from 2 registers in BADC byte order
-//
-// The modbus_get_float_badc() function shall get a float from 4 bytes with swapped bytes (BADC instead of ABCD). The
-// src array must be a pointer on two 16 bits values, for example, if the first word is set to 0x2000 and the second to
-// 0x47F1, the float value will be read as 123456.0.
-func ModbusGetFloatBadc(src []uint16) float32 {
-	return float32(C.modbus_get_float_badc((*C.uint16_t)(unsafe.SliceData(src))))
+// DecodeFloatBADC modbus_get_float_badc - get a float value from 2 registers in BADC byte order
+func DecodeFloatBADC(src []uint16) (float32, error) {
+	if len(src) < 2 {
+		return 0, fmt.Errorf("modbus: decode float requires at least 2 registers, got %d", len(src))
+	}
+	return float32(C.modbus_get_float_badc((*C.uint16_t)(unsafe.SliceData(src)))), nil
 }
 
-// ModbusGetFloatCdab modbus_get_float_cdab - get a float value from 2 registers in CDAB byte order
-//
-// The modbus_get_float_cdab() function shall get a float from 4 bytes with swapped words (CDAB order instead of ABCD).
-// The src array must be a pointer on two 16 bits values, for example, if the first word is set to F147 and the second
-// to 0x0020, the float value will be read as 123456.0.
-func ModbusGetFloatCdab(src []uint16) float32 {
-	return float32(C.modbus_get_float_cdab((*C.uint16_t)(unsafe.SliceData(src))))
+// DecodeFloatCDAB modbus_get_float_cdab - get a float value from 2 registers in CDAB byte order
+func DecodeFloatCDAB(src []uint16) (float32, error) {
+	if len(src) < 2 {
+		return 0, fmt.Errorf("modbus: decode float requires at least 2 registers, got %d", len(src))
+	}
+	return float32(C.modbus_get_float_cdab((*C.uint16_t)(unsafe.SliceData(src)))), nil
 }
 
-// ModbusSetFloat modbus_set_float - set a float value from 2 registers
-//
-// The modbus_set_float() function shall set a float to 4 bytes in Modbus format (ABCD). The dest array must be pointer
-// on two 16 bits values to be able to store the full result of the conversion.
-func ModbusSetFloat(f float32, dest []uint16) {
+// EncodeFloat modbus_set_float - set a float value to 2 registers (ABCD byte order)
+func EncodeFloat(f float32, dest []uint16) error {
+	if len(dest) < 2 {
+		return fmt.Errorf("modbus: encode float requires at least 2 registers, got %d", len(dest))
+	}
 	C.modbus_set_float(C.float(f), (*C.uint16_t)(unsafe.SliceData(dest)))
+	return nil
 }
 
-// ModbusSetFloatAbcd modbus_set_float_abcd - set a float value in 2 registers using ABCD byte order
-//
-// The modbus_set_float_abcd() function shall set a float to 4 bytes in usual Modbus format. The dest array must be
-// pointer on two 16 bits values to be able to store the full result of the conversion.
-func ModbusSetFloatAbcd(f float32, dest []uint16) {
+// EncodeFloatABCD modbus_set_float_abcd - set a float value in 2 registers using ABCD byte order
+func EncodeFloatABCD(f float32, dest []uint16) error {
+	if len(dest) < 2 {
+		return fmt.Errorf("modbus: encode float requires at least 2 registers, got %d", len(dest))
+	}
 	C.modbus_set_float_abcd(C.float(f), (*C.uint16_t)(unsafe.SliceData(dest)))
+	return nil
 }
 
-// ModbusSetFloatDcba modbus_set_float_dcba - set a float value in 2 registers using DCBA byte order
-//
-// The modbus_set_float_dcba() function shall set a float to 4 bytes in inverted Modbus format (DCBA order). The dest
-// array must be pointer on two 16 bits values to be able to store the full result of the conversion.
-func ModbusSetFloatDcba(f float32, dest []uint16) {
+// EncodeFloatDCBA modbus_set_float_dcba - set a float value in 2 registers using DCBA byte order
+func EncodeFloatDCBA(f float32, dest []uint16) error {
+	if len(dest) < 2 {
+		return fmt.Errorf("modbus: encode float requires at least 2 registers, got %d", len(dest))
+	}
 	C.modbus_set_float_dcba(C.float(f), (*C.uint16_t)(unsafe.SliceData(dest)))
+	return nil
 }
 
-// ModbusSetFloatBadc modbus_set_float_badc - set a float value in 2 registers using BADC byte order
-//
-// The modbus_set_float_badc() function shall set a float to 4 bytes in swapped bytes Modbus format (BADC instead of
-// ABCD). The dest array must be pointer on two 16 bits values to be able to store the full result of the conversion.
-func ModbusSetFloatBadc(f float32, dest []uint16) {
+// EncodeFloatBADC modbus_set_float_badc - set a float value in 2 registers using BADC byte order
+func EncodeFloatBADC(f float32, dest []uint16) error {
+	if len(dest) < 2 {
+		return fmt.Errorf("modbus: encode float requires at least 2 registers, got %d", len(dest))
+	}
 	C.modbus_set_float_badc(C.float(f), (*C.uint16_t)(unsafe.SliceData(dest)))
+	return nil
 }
 
-// ModbusSetFloatCdab modbus_set_float_cdab - set a float value in 2 registers using CDAB byte order
-//
-// The modbus_set_float_cdab() function shall set a float to 4 bytes in swapped words Modbus format (CDAB order instead
-// of ABCD). The dest array must be pointer on two 16 bits values to be able to store the full result of the conversion.
-func ModbusSetFloatCdab(f float32, dest []uint16) {
+// EncodeFloatCDAB modbus_set_float_cdab - set a float value in 2 registers using CDAB byte order
+func EncodeFloatCDAB(f float32, dest []uint16) error {
+	if len(dest) < 2 {
+		return fmt.Errorf("modbus: encode float requires at least 2 registers, got %d", len(dest))
+	}
 	C.modbus_set_float_cdab(C.float(f), (*C.uint16_t)(unsafe.SliceData(dest)))
+	return nil
+}
+
+// cUint8ToBytes converts a []C.uint8_t to a []byte.
+func cUint8ToBytes(src []C.uint8_t) []byte {
+	out := make([]byte, len(src))
+	for i, v := range src {
+		out[i] = byte(v)
+	}
+	return out
+}
+
+// cUint16ToSlice converts a []C.uint16_t to a []uint16.
+func cUint16ToSlice(src []C.uint16_t) []uint16 {
+	out := make([]uint16, len(src))
+	for i, v := range src {
+		out[i] = uint16(v)
+	}
+	return out
+}
+
+// bytesToCUint8 converts a []byte to a []C.uint8_t.
+func bytesToCUint8(src []byte) []C.uint8_t {
+	dest := make([]C.uint8_t, len(src))
+	for i, v := range src {
+		dest[i] = C.uint8_t(v)
+	}
+	return dest
+}
+
+// uint16ToCUint16 converts a []uint16 to a []C.uint16_t.
+func uint16ToCUint16(src []uint16) []C.uint16_t {
+	dest := make([]C.uint16_t, len(src))
+	for i, v := range src {
+		dest[i] = C.uint16_t(v)
+	}
+	return dest
 }

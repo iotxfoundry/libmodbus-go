@@ -1,4 +1,4 @@
-package libmodbusgo
+package modbus
 
 /*
 #cgo CFLAGS: -I${SRCDIR}

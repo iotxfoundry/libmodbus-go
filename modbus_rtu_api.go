@@ -1,4 +1,4 @@
-package libmodbusgo
+package modbus
 
 /*
 #include <stdlib.h>
@@ -8,27 +8,29 @@ extern void set_rts_cgo(modbus_t *ctx, int on);
 */
 import "C"
 import (
+	"runtime"
 	"sync"
 	"time"
 	"unsafe"
 )
 
-var mapSetRtsCallback = sync.Map{}
+var mapSetRtsCallback sync.Map
 
 //export set_rts_go
 func set_rts_go(ctx *C.modbus_t, on C.int) {
-	mapSetRtsCallback.Range(func(key, value any) bool {
-		f, ok := value.(SetRtsCallback)
-		if ok {
-			f(&Modbus{ctx: ctx}, int(on))
-		} else {
-			mapSetRtsCallback.Delete(key)
-		}
-		return true
-	})
+	val, ok := mapSetRtsCallback.Load(unsafe.Pointer(ctx))
+	if !ok {
+		return
+	}
+	entry, ok := val.(*rtsEntry)
+	if !ok {
+		mapSetRtsCallback.Delete(unsafe.Pointer(ctx))
+		return
+	}
+	entry.fn(entry.mb, int(on))
 }
 
-// modbus_new_rtu modbus_new_rtu - create a libmodbus context for RTU
+// NewRTU modbus_new_rtu - create a libmodbus context for RTU
 //
 // The modbus_new_rtu() function shall allocate and initialize a modbus_t structure to communicate in RTU mode on a
 // serial line.
@@ -50,74 +52,56 @@ func set_rts_go(ctx *C.modbus_t, on C.int) {
 // The stop_bits argument specifies the bits of stop, the allowed values are 1 and 2.
 //
 // Once the modbus_t structure is initialized, you can connect to the serial bus with modbus_connect.
-//
-// In RTU, your program can act as server or client:
-//
-// server is called slave in Modbus terminology, your program will expose data to the network by processing and
-// answering the requests of one of several clients. It up to you to define the slave ID of your service with
-// modbus_set_slave, this ID should be used by the client to communicate with your program.
-//
-// client is called master in Modbus terminology, your program will send requests to servers to read or write data from
-// them. Before issuing the requests, you should define the slave ID of the remote device with modbus_set_slave. The
-// slave ID is not an argument of the read/write functions because it's very frequent to talk with only one server so
-// you can set it once and for all. The slave ID it not used in TCP communications so this way the API is common to
-// both.
-func ModbusNewRtu(device string, baud int, parity byte, dataBit int, stopBit int) *Modbus {
+func NewRTU(device string, baud int, parity byte, dataBit int, stopBit int) (*Modbus, error) {
 	cdevice := C.CString(device)
 	defer C.free(unsafe.Pointer(cdevice))
 	ctx := C.modbus_new_rtu(cdevice, C.int(baud), C.char(parity), C.int(dataBit), C.int(stopBit))
 	if ctx == nil {
-		return nil
+		return nil, newCError()
 	}
-	return &Modbus{ctx: ctx}
+	m := &Modbus{ctx: ctx}
+	runtime.SetFinalizer(m, (*Modbus).Destroy)
+	return m, nil
 }
 
 // RtuSetSerialMode modbus_rtu_set_serial_mode - set the serial mode
 //
 // The modbus_rtu_set_serial_mode() function shall set the selected serial mode:
 //
-//   - MODBUS_RTU_RS232, the serial line is set for RS-232 communication. RS-232 (Recommended Standard 232) is the
-//     traditional name for a series of standards for serial binary single-ended data and control signals connecting
-//     between a DTE (Data Terminal Equipment) and a DCE (Data Circuit-terminating Equipment). It is commonly used in
-//     computer serial ports.
-//
-//   - MODBUS_RTU_RS485, the serial line is set for RS-485 communication. EIA-485, also known as TIA/EIA-485 or RS-485,
-//     is a standard defining the electrical characteristics of drivers and receivers for use in balanced digital
-//     multipoint systems. This standard is widely used for communications in industrial automation because it can be
-//     used effectively over long distances and in electrically noisy environments.
+//   - MODBUS_RTU_RS232, the serial line is set for RS-232 communication.
+//   - MODBUS_RTU_RS485, the serial line is set for RS-485 communication.
 //
 // This function is only supported on Linux kernels 2.6.28 onwards.
 func (x *Modbus) RtuSetSerialMode(mode int) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_rtu_set_serial_mode(x.ctx, C.int(mode))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // RtuGetSerialMode modbus_rtu_get_serial_mode - get the current serial mode
 //
 // The modbus_rtu_get_serial_mode() function shall return the serial mode currently used by the libmodbus context:
 //
-//   - MODBUS_RTU_RS232, the serial line is set for RS-232 communication. RS-232 (Recommended Standard 232) is the
-//     traditional name for a series of standards for serial binary single-ended data and control signals connecting
-//     between a DTE (Data Terminal Equipment) and a DCE (Data Circuit-terminating Equipment). It is commonly used in
-//     computer serial ports
-//
-//   - MODBUS_RTU_RS485, the serial line is set for RS-485 communication. EIA-485, also known as TIA/EIA-485 or RS-485,
-//     is a standard defining the electrical characteristics of drivers and receivers for use in balanced digital
-//     multipoint systems. This standard is widely used for communications in industrial automation because it can be
-//     used effectively over long distances and in electrically noisy environments. This function is only available on
-//     Linux kernels 2.6.28 onwards and can only be used with a context using a RTU backend.
+//   - MODBUS_RTU_RS232, the serial line is set for RS-232 communication.
+//   - MODBUS_RTU_RS485, the serial line is set for RS-485 communication.
 func (x *Modbus) RtuGetSerialMode() (mode int, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_rtu_get_serial_mode(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	mode = int(code)
-	return
+	return int(code), nil
 }
 
 // RtuSetRts modbus_rtu_set_rts - set the RTS mode in RTU
@@ -133,12 +117,16 @@ func (x *Modbus) RtuGetSerialMode() (mode int, err error) {
 //
 // This function can only be used with a context using a RTU backend.
 func (x *Modbus) RtuSetRts(mode int) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
 	code := C.modbus_rtu_set_rts(x.ctx, C.int(mode))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // RtuGetRts modbus_rtu_get_rts - get the current RTS mode in RTU
@@ -149,16 +137,17 @@ func (x *Modbus) RtuSetRts(mode int) (err error) {
 //   - MODBUS_RTU_RTS_NONE
 //   - MODBUS_RTU_RTS_UP
 //   - MODBUS_RTU_RTS_DOWN
-//
-// This function can only be used with a context using a RTU backend.
 func (x *Modbus) RtuGetRts() (mode int, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_rtu_get_rts(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	mode = int(code)
-	return
+	return int(code), nil
 }
 
 // RtuSetCustomRts modbus_rtu_set_custom_rts - set a function to be used for custom RTS implementation
@@ -171,14 +160,19 @@ func (x *Modbus) RtuGetRts() (mode int, err error) {
 // for the function to be called.
 //
 // This function can only be used with a context using a RTU backend.
-func (x *Modbus) RtuSetCustomRts(cb SetRtsCallback) (err error) {
-	mapSetRtsCallback.Store(x.ctx, cb)
+func (x *Modbus) RtuSetCustomRts(cb RTSFunc) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
+	mapSetRtsCallback.Store(unsafe.Pointer(x.ctx), &rtsEntry{mb: x, fn: cb})
 	code := C.modbus_rtu_set_custom_rts(x.ctx, (C.set_rts)(C.set_rts_cgo))
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		mapSetRtsCallback.Delete(unsafe.Pointer(x.ctx))
+		return newCError()
 	}
-	return
+	return nil
 }
 
 // RtuSetRtsDelay modbus_rtu_set_rts_delay - set the RTS delay in RTU
@@ -187,12 +181,16 @@ func (x *Modbus) RtuSetCustomRts(cb SetRtsCallback) (err error) {
 //
 // This function can only be used with a context using a RTU backend.
 func (x *Modbus) RtuSetRtsDelay(us time.Duration) (err error) {
-	code := C.modbus_rtu_set_rts_delay(x.ctx, C.int(us))
-	if code < 0 {
-		err = ModbusStrError()
-		return
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
 	}
-	return
+	code := C.modbus_rtu_set_rts_delay(x.ctx, C.int(us.Microseconds()))
+	if code < 0 {
+		return newCError()
+	}
+	return nil
 }
 
 // RtuGetRtsDelay modbus_rtu_get_rts_delay - get the current RTS delay in RTU
@@ -202,54 +200,14 @@ func (x *Modbus) RtuSetRtsDelay(us time.Duration) (err error) {
 //
 // This function can only be used with a context using a RTU backend.
 func (x *Modbus) RtuGetRtsDelay() (us time.Duration, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return 0, err
+	}
 	code := C.modbus_rtu_get_rts_delay(x.ctx)
 	if code < 0 {
-		err = ModbusStrError()
-		return
+		return 0, newCError()
 	}
-	us = time.Duration(code) * time.Microsecond
-	return
-}
-
-// RtuReceive modbus_receive - receive an indication request
-//
-// The modbus_receive() function shall receive an indication request from the socket of the context ctx. This function
-// is used by a Modbus slave/server to receive and analyze indication request sent by the masters/clients.
-//
-// If you need to use another socket or file descriptor than the one defined in the context ctx, see the function
-// modbus_set_socket.
-func (x *Modbus) RtuReceive() (req []byte, err error) {
-	recv := make([]C.uint8_t, MODBUS_RTU_MAX_ADU_LENGTH)
-	code := C.modbus_receive(x.ctx, unsafe.SliceData(recv))
-	if code < 0 {
-		err = ModbusStrError()
-		return
-	}
-	for i := range code {
-		req = append(req, byte(recv[i]))
-	}
-	return
-}
-
-// RtuReceiveConfirmation modbus_receive_confirmation - receive a confirmation request
-//
-// The modbus_receive_confirmation() function shall receive a request via the socket of the context ctx. This function
-// must be used for debugging purposes because the received response isn't checked against the initial request. This
-// function can be used to receive request not handled by the library.
-//
-// The maximum size of the response depends on the used backend, in RTU the rsp array must be MODBUS_RTU_MAX_ADU_LENGTH
-// bytes and in TCP it must be MODBUS_TCP_MAX_ADU_LENGTH bytes. If you want to write code compatible with both, you can
-// use the constant MODBUS_MAX_ADU_LENGTH (maximum value of all libmodbus backends). Take care to allocate enough
-// memory to store responses to avoid crashes of your server.
-func (x *Modbus) RtuReceiveConfirmation() (rsp []byte, err error) {
-	recv := make([]C.uint8_t, MODBUS_RTU_MAX_ADU_LENGTH)
-	code := C.modbus_receive_confirmation(x.ctx, unsafe.SliceData(recv))
-	if code < 0 {
-		err = ModbusStrError()
-		return
-	}
-	for i := range code {
-		rsp = append(rsp, byte(recv[i]))
-	}
-	return
+	return time.Duration(code) * time.Microsecond, nil
 }

@@ -5,7 +5,7 @@ import (
 	"log"
 	"syscall"
 
-	libmodbusgo "github.com/iotxfoundry/libmodbus-go"
+	"github.com/iotxfoundry/libmodbus-go"
 )
 
 func FD_SET(fd int, p *syscall.FdSet) {
@@ -36,19 +36,19 @@ func FD_ISSET(fd int, p *syscall.FdSet) bool {
 }
 
 func main() {
-	ctx := libmodbusgo.ModbusNewTcp("127.0.0.1", 1502)
-	if ctx == nil {
-		log.Println("ModbusNewTcp error")
+	ctx, err := modbus.NewTCP("127.0.0.1", 1502)
+	if err != nil {
+		log.Println("NewTCP error:", err)
 		return
 	}
 	defer ctx.Free()
-	defer ctx.Close()
+	defer func() { _ = ctx.Close() }()
 
 	ctx.SetDebug(true)
 
-	mbMapping := libmodbusgo.ModbusMappingNew(500, 500, 500, 500)
-	if mbMapping == nil {
-		log.Println("ModbusMappingNew error")
+	mbMapping, err := modbus.NewMapping(500, 500, 500, 500)
+	if err != nil {
+		log.Println("NewMapping error:", err)
 		return
 	}
 	defer mbMapping.Free()
