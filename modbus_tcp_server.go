@@ -1,0 +1,195 @@
+package modbus
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"sync"
+)
+
+// TCPServer is a pure-Go multi-client Modbus TCP server.
+// It accepts connections via net.Listener, dup's each connection's fd into
+// blocking mode, and hands the fd to the C libmodbus context for recv/send.
+type TCPServer struct {
+	addr       string
+	mapping    *ModbusMapping
+	maxClients int
+	debug      bool
+
+	onConnect    func(addr net.Addr)
+	onDisconnect func(addr net.Addr, err error)
+
+	mu       sync.Mutex
+	listener net.Listener
+	files    map[int]*os.File // dupFd -> *os.File (prevent GC of fd)
+	wg       sync.WaitGroup
+	done     chan struct{}
+	sem      chan struct{} // semaphore for max clients
+}
+
+// NewTCPServer creates a new Modbus TCP server that listens on addr and
+// serves requests against the shared data mapping.
+func NewTCPServer(addr string, mapping *ModbusMapping) *TCPServer {
+	return &TCPServer{
+		addr:       addr,
+		mapping:    mapping,
+		maxClients: 10,
+		files:      make(map[int]*os.File),
+		done:       make(chan struct{}),
+	}
+}
+
+// SetMaxClients sets the maximum number of simultaneous client connections.
+func (s *TCPServer) SetMaxClients(n int) {
+	s.maxClients = n
+}
+
+// SetDebug enables or disables verbose debug output for all client contexts.
+func (s *TCPServer) SetDebug(debug bool) {
+	s.debug = debug
+}
+
+// SetOnConnect registers a callback invoked when a new client connects.
+func (s *TCPServer) SetOnConnect(fn func(net.Addr)) {
+	s.onConnect = fn
+}
+
+// SetOnDisconnect registers a callback invoked when a client disconnects.
+// The error argument describes the reason for disconnection.
+func (s *TCPServer) SetOnDisconnect(fn func(net.Addr, error)) {
+	s.onDisconnect = fn
+}
+
+// Serve starts the TCP server. It blocks until Close is called or a fatal
+// accept error occurs.
+func (s *TCPServer) Serve() error {
+	ln, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return fmt.Errorf("modbus: tcp server listen %s: %w", s.addr, err)
+	}
+	s.listener = ln
+
+	s.sem = make(chan struct{}, s.maxClients)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			select {
+			case <-s.done:
+				return nil
+			default:
+				return fmt.Errorf("modbus: tcp server accept: %w", err)
+			}
+		}
+
+		// Try to acquire a semaphore slot (non-blocking).
+		select {
+		case s.sem <- struct{}{}:
+			s.wg.Add(1)
+			go s.handleConn(conn)
+		default:
+			conn.Close()
+		}
+	}
+}
+
+// Close gracefully shuts down the server. It stops accepting new connections,
+// closes all dup'd file descriptors, and waits for all handler goroutines
+// to finish.
+func (s *TCPServer) Close() error {
+	close(s.done)
+
+	var err error
+	if s.listener != nil {
+		err = s.listener.Close()
+	}
+
+	s.mu.Lock()
+	for fd, file := range s.files {
+		file.Close()
+		delete(s.files, fd)
+	}
+	s.mu.Unlock()
+
+	s.wg.Wait()
+	return err
+}
+
+// handleConn manages a single client connection. It dup's the TCP fd into
+// blocking mode, creates a per-connection C libmodbus context, and runs a
+// receive/reply loop until the client disconnects or an error occurs.
+func (s *TCPServer) handleConn(conn net.Conn) (err error) {
+	defer s.wg.Done()
+	defer func() { <-s.sem }()
+
+	remoteAddr := conn.RemoteAddr()
+
+	// Extract the raw fd via *net.TCPConn.File (duplicates the fd in blocking mode).
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		conn.Close()
+		return fmt.Errorf("modbus: expected *net.TCPConn, got %T", conn)
+	}
+
+	file, err := tcpConn.File()
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("modbus: get tcp conn file: %w", err)
+	}
+	dupFd := int(file.Fd())
+
+	// Close the original conn; the dup'd fd keeps the socket alive.
+	conn.Close()
+
+	// Register the dup'd file to prevent GC from closing the fd.
+	s.mu.Lock()
+	s.files[dupFd] = file
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.files, dupFd)
+		s.mu.Unlock()
+		file.Close()
+		if s.onDisconnect != nil {
+			s.onDisconnect(remoteAddr, err)
+		}
+	}()
+
+	// Create a per-connection C libmodbus context.
+	ctx, err := NewTCP("0.0.0.0", 0)
+	if err != nil {
+		return fmt.Errorf("modbus: new tcp context: %w", err)
+	}
+	defer ctx.Free()
+
+	if s.debug {
+		ctx.SetDebug(true)
+	}
+
+	if err := ctx.SetSocket(dupFd); err != nil {
+		return fmt.Errorf("modbus: set socket: %w", err)
+	}
+
+	if s.onConnect != nil {
+		s.onConnect(remoteAddr)
+	}
+
+	// Receive/Reply loop.
+	for {
+		req, recvErr := ctx.Receive()
+		if recvErr != nil {
+			err = recvErr
+			return
+		}
+		replyErr := ctx.Reply(req, s.mapping)
+		if replyErr != nil {
+			if s.debug {
+				log.Printf("modbus: reply error: %s", replyErr)
+			}
+			err = replyErr
+			return
+		}
+	}
+}

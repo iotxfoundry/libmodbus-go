@@ -1,127 +1,48 @@
 package main
 
 import (
-	"errors"
 	"log"
+	"net"
+	"os"
+	"os/signal"
 	"syscall"
 
 	"github.com/iotxfoundry/libmodbus-go"
 )
 
-func FD_SET(fd int, p *syscall.FdSet) {
-	if fd < 0 || fd/64 >= len(p.Bits) {
-		return
-	}
-	p.Bits[fd/64] |= 1 << (uint(fd) % 64)
-}
-
-func FD_ZERO(p *syscall.FdSet) {
-	for i := range p.Bits {
-		p.Bits[i] = 0
-	}
-}
-
-func FD_CLR(fd int, p *syscall.FdSet) {
-	if fd < 0 || fd/64 >= len(p.Bits) {
-		return
-	}
-	p.Bits[fd/64] &^= 1 << (uint(fd) % 64)
-}
-
-func FD_ISSET(fd int, p *syscall.FdSet) bool {
-	if fd < 0 || fd/64 >= len(p.Bits) {
-		return false
-	}
-	return p.Bits[fd/64]&(1<<(uint(fd)%64)) != 0
-}
-
 func main() {
-	ctx, err := modbus.NewTCP("127.0.0.1", 1502)
+	mapping, err := modbus.NewMapping(500, 500, 500, 500)
 	if err != nil {
-		log.Println("NewTCP error:", err)
-		return
+		log.Fatalln("NewMapping error:", err)
 	}
-	defer ctx.Free()
-	defer func() { _ = ctx.Close() }()
+	defer mapping.Free()
 
-	ctx.SetDebug(true)
+	server := modbus.NewTCPServer("127.0.0.1:1502", mapping)
+	server.SetMaxClients(10)
+	server.SetDebug(true)
+	server.SetOnConnect(func(addr net.Addr) {
+		log.Printf("Client connected: %s", addr)
+	})
+	server.SetOnDisconnect(func(addr net.Addr, err error) {
+		log.Printf("Client disconnected: %s (%v)", addr, err)
+	})
 
-	mbMapping, err := modbus.NewMapping(500, 500, 500, 500)
-	if err != nil {
-		log.Println("NewMapping error:", err)
-		return
+	// Run server in background
+	go func() {
+		log.Println("Starting Modbus TCP server on 127.0.0.1:1502")
+		if err := server.Serve(); err != nil {
+			log.Fatalln("Server error:", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	log.Println("Shutting down server...")
+	if err := server.Close(); err != nil {
+		log.Println("Close error:", err)
 	}
-	defer mbMapping.Free()
-
-	socket, err := ctx.TcpListen(1)
-	if err != nil {
-		log.Fatalln(err)
-		return
-	}
-	log.Println("TcpListen")
-
-	clients := [10]int{}
-	readfds := syscall.FdSet{}
-	for {
-		FD_ZERO(&readfds)
-		FD_SET(socket, &readfds)
-		maxFd := socket
-
-		for _, client := range clients {
-			if client > 0 {
-				FD_SET(client, &readfds)
-				if client > maxFd {
-					maxFd = client
-				}
-			}
-		}
-
-		activity, err := syscall.Select(maxFd+1, &readfds, nil, nil, nil)
-		if activity < 0 {
-			if err != nil && !errors.Is(err, syscall.EINTR) {
-				log.Printf("select error: %s\n", err)
-				break
-			}
-			continue
-		}
-
-		if FD_ISSET(socket, &readfds) {
-			cs, err := ctx.TcpAccept()
-			if err != nil {
-				log.Printf("TcpAccept error: %s\n", err)
-				continue
-			}
-
-			added := false
-			for k, client := range clients {
-				if client == 0 {
-					clients[k] = cs
-					added = true
-					break
-				}
-			}
-			if !added {
-				log.Printf("Too many clients, closing new socket: %d\n", cs)
-				syscall.Close(cs)
-			}
-		}
-
-		for k, client := range clients {
-			if client > 0 && FD_ISSET(client, &readfds) {
-				ctx.SetSocket(client)
-				req, err := ctx.Receive()
-				if err != nil {
-					syscall.Close(client)
-					clients[k] = 0
-					log.Printf("Client disconnected, socket fd: %d\n", client)
-					continue
-				}
-				err = ctx.Reply(req, mbMapping)
-				if err != nil {
-					log.Printf("reply error: %s", err)
-					break
-				}
-			}
-		}
-	}
+	log.Println("Server stopped")
 }
