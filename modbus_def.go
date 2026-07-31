@@ -6,7 +6,9 @@ package modbus
 import "C"
 import (
 	"fmt"
+	"runtime"
 	"sync"
+	"unsafe"
 )
 
 // Modbus function codes
@@ -126,10 +128,11 @@ var (
 )
 
 type Modbus struct {
-	mu     sync.Mutex
-	ctx    *C.modbus_t
-	socket int
-	closed bool
+	mu      sync.Mutex
+	ctx     *C.modbus_t
+	socket  int
+	closed  bool
+	cleanup runtime.Cleanup
 }
 
 func (x *Modbus) ensureCtx() error {
@@ -139,9 +142,25 @@ func (x *Modbus) ensureCtx() error {
 	return nil
 }
 
+// freeModbus releases the C context held by an unreachable Modbus. It is used
+// with runtime.AddCleanup and must not reference the Modbus value itself.
+func freeModbus(ctx *C.modbus_t) {
+	mapSetRtsCallback.Delete(unsafe.Pointer(ctx))
+	C.modbus_close(ctx)
+	C.modbus_free(ctx)
+}
+
+// freeMapping releases the C mapping held by an unreachable ModbusMapping. It
+// is used with runtime.AddCleanup and must not reference the ModbusMapping
+// value itself.
+func freeMapping(mb *C.modbus_mapping_t) {
+	C.modbus_mapping_free(mb)
+}
+
 type ModbusMapping struct {
-	mu sync.Mutex
-	mb *C.modbus_mapping_t
+	mu      sync.Mutex
+	mb      *C.modbus_mapping_t
+	cleanup runtime.Cleanup
 }
 
 type ErrorRecoveryMode byte
@@ -174,8 +193,14 @@ func (e *Error) Code() ErrorCode {
 	return e.code
 }
 
+// Unwrap returns the underlying ErrorCode so that errors.Is(err, EMBXILFUN)
+// and friends work on errors returned by this package.
+func (e *Error) Unwrap() error {
+	return e.code
+}
+
 type SlaveIDReport struct {
-	SlaveId            byte
+	SlaveID            byte
 	RunIndicatorStatus byte
 	AdditionalData     []byte
 }

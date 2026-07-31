@@ -12,22 +12,30 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+	"weak"
 )
 
 var mapSetRtsCallback sync.Map
 
 //export set_rts_go
 func set_rts_go(ctx *C.modbus_t, on C.int) {
-	val, ok := mapSetRtsCallback.Load(unsafe.Pointer(ctx))
+	key := unsafe.Pointer(ctx)
+	val, ok := mapSetRtsCallback.Load(key)
 	if !ok {
 		return
 	}
 	entry, ok := val.(*rtsEntry)
 	if !ok {
-		mapSetRtsCallback.Delete(unsafe.Pointer(ctx))
+		mapSetRtsCallback.Delete(key)
 		return
 	}
-	entry.fn(entry.mb, int(on))
+	mb := entry.mb.Value()
+	if mb == nil {
+		// The Modbus context has been garbage collected; drop the entry.
+		mapSetRtsCallback.Delete(key)
+		return
+	}
+	entry.fn(mb, int(on))
 }
 
 // NewRTU modbus_new_rtu - create a libmodbus context for RTU
@@ -60,11 +68,11 @@ func NewRTU(device string, baud int, parity byte, dataBit int, stopBit int) (*Mo
 		return nil, newCError()
 	}
 	m := &Modbus{ctx: ctx}
-	runtime.SetFinalizer(m, (*Modbus).Destroy)
+	m.cleanup = runtime.AddCleanup(m, freeModbus, ctx)
 	return m, nil
 }
 
-// RtuSetSerialMode modbus_rtu_set_serial_mode - set the serial mode
+// RTUSetSerialMode modbus_rtu_set_serial_mode - set the serial mode
 //
 // The modbus_rtu_set_serial_mode() function shall set the selected serial mode:
 //
@@ -72,7 +80,7 @@ func NewRTU(device string, baud int, parity byte, dataBit int, stopBit int) (*Mo
 //   - MODBUS_RTU_RS485, the serial line is set for RS-485 communication.
 //
 // This function is only supported on Linux kernels 2.6.28 onwards.
-func (x *Modbus) RtuSetSerialMode(mode int) (err error) {
+func (x *Modbus) RTUSetSerialMode(mode int) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -85,13 +93,13 @@ func (x *Modbus) RtuSetSerialMode(mode int) (err error) {
 	return nil
 }
 
-// RtuGetSerialMode modbus_rtu_get_serial_mode - get the current serial mode
+// RTUGetSerialMode modbus_rtu_get_serial_mode - get the current serial mode
 //
 // The modbus_rtu_get_serial_mode() function shall return the serial mode currently used by the libmodbus context:
 //
 //   - MODBUS_RTU_RS232, the serial line is set for RS-232 communication.
 //   - MODBUS_RTU_RS485, the serial line is set for RS-485 communication.
-func (x *Modbus) RtuGetSerialMode() (mode int, err error) {
+func (x *Modbus) RTUGetSerialMode() (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -104,7 +112,7 @@ func (x *Modbus) RtuGetSerialMode() (mode int, err error) {
 	return int(code), nil
 }
 
-// RtuSetRts modbus_rtu_set_rts - set the RTS mode in RTU
+// RTUSetRTS modbus_rtu_set_rts - set the RTS mode in RTU
 //
 // The modbus_rtu_set_rts() function shall set the Request To Send mode to communicate on a RS-485 serial bus. By
 // default, the mode is set to MODBUS_RTU_RTS_NONE and no signal is issued before writing data on the wire.
@@ -116,7 +124,7 @@ func (x *Modbus) RtuGetSerialMode() (mode int, err error) {
 // inverted RTS flag.
 //
 // This function can only be used with a context using a RTU backend.
-func (x *Modbus) RtuSetRts(mode int) (err error) {
+func (x *Modbus) RTUSetRTS(mode int) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -129,7 +137,7 @@ func (x *Modbus) RtuSetRts(mode int) (err error) {
 	return nil
 }
 
-// RtuGetRts modbus_rtu_get_rts - get the current RTS mode in RTU
+// RTUGetRTS modbus_rtu_get_rts - get the current RTS mode in RTU
 //
 // The modbus_rtu_get_rts() function shall get the current Request To Send mode of the libmodbus context ctx. The
 // possible returned values are:
@@ -137,7 +145,7 @@ func (x *Modbus) RtuSetRts(mode int) (err error) {
 //   - MODBUS_RTU_RTS_NONE
 //   - MODBUS_RTU_RTS_UP
 //   - MODBUS_RTU_RTS_DOWN
-func (x *Modbus) RtuGetRts() (mode int, err error) {
+func (x *Modbus) RTUGetRTS() (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -150,7 +158,7 @@ func (x *Modbus) RtuGetRts() (mode int, err error) {
 	return int(code), nil
 }
 
-// RtuSetCustomRts modbus_rtu_set_custom_rts - set a function to be used for custom RTS implementation
+// RTUSetCustomRTS modbus_rtu_set_custom_rts - set a function to be used for custom RTS implementation
 //
 // The modbus_rtu_set_custom_rts() function shall set a custom function to be called when the RTS pin is to be set
 // before and after a transmission. By default this is set to an internal function that toggles the RTS pin using an
@@ -160,13 +168,13 @@ func (x *Modbus) RtuGetRts() (mode int, err error) {
 // for the function to be called.
 //
 // This function can only be used with a context using a RTU backend.
-func (x *Modbus) RtuSetCustomRts(cb RTSFunc) (err error) {
+func (x *Modbus) RTUSetCustomRTS(cb RTSFunc) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
 		return err
 	}
-	mapSetRtsCallback.Store(unsafe.Pointer(x.ctx), &rtsEntry{mb: x, fn: cb})
+	mapSetRtsCallback.Store(unsafe.Pointer(x.ctx), &rtsEntry{mb: weak.Make(x), fn: cb})
 	code := C.modbus_rtu_set_custom_rts(x.ctx, (C.set_rts)(C.set_rts_cgo))
 	if code < 0 {
 		mapSetRtsCallback.Delete(unsafe.Pointer(x.ctx))
@@ -175,12 +183,12 @@ func (x *Modbus) RtuSetCustomRts(cb RTSFunc) (err error) {
 	return nil
 }
 
-// RtuSetRtsDelay modbus_rtu_set_rts_delay - set the RTS delay in RTU
+// RTUSetRTSDelay modbus_rtu_set_rts_delay - set the RTS delay in RTU
 //
 // The modbus_rtu_set_rts_delay() function shall set the Request To Send delay period of the libmodbus context 'ctx'.
 //
 // This function can only be used with a context using a RTU backend.
-func (x *Modbus) RtuSetRtsDelay(us time.Duration) (err error) {
+func (x *Modbus) RTUSetRTSDelay(us time.Duration) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -193,13 +201,13 @@ func (x *Modbus) RtuSetRtsDelay(us time.Duration) (err error) {
 	return nil
 }
 
-// RtuGetRtsDelay modbus_rtu_get_rts_delay - get the current RTS delay in RTU
+// RTUGetRTSDelay modbus_rtu_get_rts_delay - get the current RTS delay in RTU
 //
 // The modbus_rtu_get_rts_delay() function shall get the current Request To Send delay period of the libmodbus context
 // 'ctx'.
 //
 // This function can only be used with a context using a RTU backend.
-func (x *Modbus) RtuGetRtsDelay() (us time.Duration, err error) {
+func (x *Modbus) RTUGetRTSDelay() (time.Duration, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {

@@ -9,7 +9,7 @@
 //	| modbus_disable_quirks()            | Modbus.DisableQuirks()          |
 //	| modbus_enable_quirks()             | Modbus.EnableQuirks()           |
 //	| modbus_flush()                     | Modbus.Flush()                  |
-//	| modbus_free()                      | Modbus.Free() / Modbus.Destroy()|
+//	| modbus_free()                      | Modbus.Free()|
 //	| modbus_get_byte_from_bits()        | GetByteFromBits()               |
 //	| modbus_get_byte_timeout()          | Modbus.GetByteTimeout()         |
 //	| modbus_get_float()                 | DecodeFloat()                   |
@@ -28,7 +28,7 @@
 //	| modbus_mask_write_register()       | Modbus.MaskWriteRegister()      |
 //	| modbus_new_rtu()                   | NewRTU()                        |
 //	| modbus_new_tcp()                   | NewTCP()                        |
-//	| modbus_new_tcp_pi()                | NewTCPPi()                      |
+//	| modbus_new_tcp_pi()                | NewTCPPI()                      |
 //	| modbus_proxy()                     | Modbus.Proxy()                  |
 //	| modbus_read_bits()                 | Modbus.ReadBits()               |
 //	| modbus_read_input_bits()           | Modbus.ReadInputBits()          |
@@ -39,15 +39,15 @@
 //	| modbus_reply()                     | Modbus.Reply()                  |
 //	| modbus_reply_exception()           | Modbus.ReplyException()         |
 //	| modbus_report_slave_id()           | Modbus.ReportSlaveID()          |
-//	| modbus_rtu_get_rts()               | Modbus.RtuGetRts()              |
-//	| modbus_rtu_get_rts_delay()         | Modbus.RtuGetRtsDelay()         |
-//	| modbus_rtu_get_serial_mode()       | Modbus.RtuGetSerialMode()       |
-//	| modbus_rtu_set_custom_rts()        | Modbus.RtuSetCustomRts()        |
-//	| modbus_rtu_set_rts()               | Modbus.RtuSetRts()              |
-//	| modbus_rtu_set_rts_delay()         | Modbus.RtuSetRtsDelay()         |
-//	| modbus_rtu_set_serial_mode()       | Modbus.RtuSetSerialMode()       |
+//	| modbus_rtu_get_rts()               | Modbus.RTUGetRTS()              |
+//	| modbus_rtu_get_rts_delay()         | Modbus.RTUGetRTSDelay()         |
+//	| modbus_rtu_get_serial_mode()       | Modbus.RTUGetSerialMode()       |
+//	| modbus_rtu_set_custom_rts()        | Modbus.RTUSetCustomRTS()        |
+//	| modbus_rtu_set_rts()               | Modbus.RTUSetRTS()              |
+//	| modbus_rtu_set_rts_delay()         | Modbus.RTUSetRTSDelay()         |
+//	| modbus_rtu_set_serial_mode()       | Modbus.RTUSetSerialMode()       |
 //	| modbus_send_raw_request()          | Modbus.SendRawRequest()         |
-//	| modbus_send_raw_request_tid()      | Modbus.SendRawRequestTid()      |
+//	| modbus_send_raw_request_tid()      | Modbus.SendRawRequestTID()      |
 //	| modbus_set_bits_from_byte()        | SetBitsFromByte()               |
 //	| modbus_set_bits_from_bytes()       | SetBitsFromBytes()              |
 //	| modbus_set_byte_timeout()          | Modbus.SetByteTimeout()         |
@@ -62,10 +62,10 @@
 //	| modbus_set_response_timeout()      | Modbus.SetResponseTimeout()     |
 //	| modbus_set_slave()                 | Modbus.SetSlave()               |
 //	| modbus_set_socket()                | Modbus.SetSocket()              |
-//	| modbus_tcp_accept()                | Modbus.TcpAccept()              |
-//	| modbus_tcp_listen()                | Modbus.TcpListen()              |
-//	| modbus_tcp_pi_accept()             | Modbus.TcpPiAccept()            |
-//	| modbus_tcp_pi_listen()             | Modbus.TcpPiListen()            |
+//	| modbus_tcp_accept()                | Modbus.TCPAccept()              |
+//	| modbus_tcp_listen()                | Modbus.TCPListen()              |
+//	| modbus_tcp_pi_accept()             | Modbus.TCPPIAccept()            |
+//	| modbus_tcp_pi_listen()             | Modbus.TCPPIListen()            |
 //	| modbus_write_and_read_registers()  | Modbus.WriteAndReadRegisters()  |
 //	| modbus_write_bit()                 | Modbus.WriteBit()               |
 //	| modbus_write_bits()                | Modbus.WriteBits()              |

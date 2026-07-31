@@ -24,12 +24,12 @@ func main() {
 	}
 	defer mbMapping.Free()
 
-	_, err = ctx.TcpListen(1)
+	_, err = ctx.TCPListen(1)
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
-	_, err = ctx.TcpAccept()
+	_, err = ctx.TCPAccept()
 	if err != nil {
 		log.Fatalln(err)
 		return

@@ -51,8 +51,8 @@ func ExampleNewTCP() {
 	defer func() { _ = ctx.Close() }()
 }
 
-func ExampleNewTCPPi() {
-	ctx, err := NewTCPPi("::1", "1502")
+func ExampleNewTCPPI() {
+	ctx, err := NewTCPPI("::1", "1502")
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -437,11 +437,11 @@ func ExampleModbus_ReportSlaveID() {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(report.SlaveId)
+	fmt.Println(report.SlaveID)
 	fmt.Println(report.RunIndicatorStatus)
 }
 
-func ExampleModbus_RtuSetSerialMode() {
+func ExampleModbus_RTUSetSerialMode() {
 	ctx, err := NewRTU("/dev/ttyUSB0", 115200, 'N', 8, 1)
 	if err != nil {
 		fmt.Println("Unable to create the libmodbus context:", err)
@@ -449,8 +449,8 @@ func ExampleModbus_RtuSetSerialMode() {
 	}
 	defer ctx.Free()
 	ctx.SetSlave(1)
-	ctx.RtuSetSerialMode(MODBUS_RTU_RS485)
-	ctx.RtuSetRts(MODBUS_RTU_RTS_UP)
+	ctx.RTUSetSerialMode(MODBUS_RTU_RS485)
+	ctx.RTUSetRTS(MODBUS_RTU_RTS_UP)
 	err = ctx.Connect()
 	if err != nil {
 		fmt.Println(err)
@@ -463,11 +463,11 @@ func ExampleModbus_RtuSetSerialMode() {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(report.SlaveId)
+	fmt.Println(report.SlaveID)
 	fmt.Println(report.RunIndicatorStatus)
 }
 
-func ExampleModbus_RtuSetRts() {
+func ExampleModbus_RTUSetRTS() {
 	ctx, err := NewRTU("/dev/ttyUSB0", 115200, 'N', 8, 1)
 	if err != nil {
 		fmt.Println("Unable to create the libmodbus context:", err)
@@ -475,8 +475,8 @@ func ExampleModbus_RtuSetRts() {
 	}
 	defer ctx.Free()
 	ctx.SetSlave(1)
-	ctx.RtuSetSerialMode(MODBUS_RTU_RS485)
-	ctx.RtuSetRts(MODBUS_RTU_RTS_UP)
+	ctx.RTUSetSerialMode(MODBUS_RTU_RS485)
+	ctx.RTUSetRTS(MODBUS_RTU_RTS_UP)
 	err = ctx.Connect()
 	if err != nil {
 		fmt.Println(err)
@@ -489,7 +489,7 @@ func ExampleModbus_RtuSetRts() {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(report.SlaveId)
+	fmt.Println(report.SlaveID)
 	fmt.Println(report.RunIndicatorStatus)
 }
 
@@ -552,7 +552,7 @@ func ExampleModbus_SetSocket() {
 	}
 	defer ctx.Free()
 
-	ss, err := ctx.TcpListen(NB_CONNECTION)
+	ss, err := ctx.TCPListen(NB_CONNECTION)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -576,7 +576,7 @@ func ExampleModbus_SetSocket() {
 	}
 }
 
-func ExampleModbus_TcpAccept() {
+func ExampleModbus_TCPAccept() {
 	const NB_CONNECTION = 100
 	ctx, err := NewTCP("127.0.0.1", 502)
 	if err != nil {
@@ -585,19 +585,19 @@ func ExampleModbus_TcpAccept() {
 	}
 	defer ctx.Free()
 
-	_, err = ctx.TcpListen(NB_CONNECTION)
+	_, err = ctx.TCPListen(NB_CONNECTION)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	_, err = ctx.TcpAccept()
+	_, err = ctx.TCPAccept()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 }
 
-func ExampleModbus_TcpListen() {
+func ExampleModbus_TCPListen() {
 	const NB_CONNECTION = 100
 	ctx, err := NewTCP("127.0.0.1", 502)
 	if err != nil {
@@ -606,54 +606,54 @@ func ExampleModbus_TcpListen() {
 	}
 	defer ctx.Free()
 
-	_, err = ctx.TcpListen(NB_CONNECTION)
+	_, err = ctx.TCPListen(NB_CONNECTION)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	_, err = ctx.TcpAccept()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-}
-
-func ExampleModbus_TcpPiListen() {
-	const NB_CONNECTION = 100
-	ctx, err := NewTCPPi("::0", "502")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer ctx.Free()
-
-	_, err = ctx.TcpPiListen(NB_CONNECTION)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	err = ctx.TcpPiAccept()
+	_, err = ctx.TCPAccept()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 }
 
-func ExampleModbus_TcpPiAccept() {
+func ExampleModbus_TCPPIListen() {
 	const NB_CONNECTION = 100
-	ctx, err := NewTCPPi("::0", "502")
+	ctx, err := NewTCPPI("::0", "502")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	defer ctx.Free()
 
-	_, err = ctx.TcpPiListen(NB_CONNECTION)
+	_, err = ctx.TCPPIListen(NB_CONNECTION)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	err = ctx.TcpPiAccept()
+	err = ctx.TCPPIAccept()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func ExampleModbus_TCPPIAccept() {
+	const NB_CONNECTION = 100
+	ctx, err := NewTCPPI("::0", "502")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer ctx.Free()
+
+	_, err = ctx.TCPPIListen(NB_CONNECTION)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = ctx.TCPPIAccept()
 	if err != nil {
 		fmt.Println(err)
 		return

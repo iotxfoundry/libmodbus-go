@@ -29,16 +29,16 @@ func NewTCP(addr string, port int) (*Modbus, error) {
 		return nil, newCError()
 	}
 	m := &Modbus{ctx: ctx}
-	runtime.SetFinalizer(m, (*Modbus).Destroy)
+	m.cleanup = runtime.AddCleanup(m, freeModbus, ctx)
 	return m, nil
 }
 
-// TcpListen modbus_tcp_listen - create and listen a TCP Modbus socket (IPv4)
+// TCPListen modbus_tcp_listen - create and listen a TCP Modbus socket (IPv4)
 //
 // The modbus_tcp_listen() function shall create a socket and listen to maximum nb_connection incoming connections on
 // the specified IP address. The context ctx must be allocated and initialized with modbus_new_tcp before to set the IP
 // address to listen, if IP address is set to NULL or '0.0.0.0', any addresses will be listen.
-func (x *Modbus) TcpListen(nb int) (socket int, err error) {
+func (x *Modbus) TCPListen(nb int) (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -48,24 +48,23 @@ func (x *Modbus) TcpListen(nb int) (socket int, err error) {
 	if code < 0 {
 		return 0, newCError()
 	}
-	socket = int(code)
-	x.socket = socket
-	return socket, nil
+	x.socket = int(code)
+	return int(code), nil
 }
 
-// TcpSocket get listened tcp socket (IPv4)
-func (x *Modbus) TcpSocket() int {
+// TCPSocket get listened tcp socket (IPv4)
+func (x *Modbus) TCPSocket() int {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	return x.socket
 }
 
-// TcpAccept modbus_tcp_accept - accept a new connection on a TCP Modbus socket (IPv4)
+// TCPAccept modbus_tcp_accept - accept a new connection on a TCP Modbus socket (IPv4)
 //
 // The modbus_tcp_accept() function shall extract the first connection on the queue of pending connections, create a
 // new socket and store it in libmodbus context given in argument. If available, accept4() with SOCK_CLOEXEC will be
 // called instead of accept().
-func (x *Modbus) TcpAccept() (socket int, err error) {
+func (x *Modbus) TCPAccept() (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -78,7 +77,7 @@ func (x *Modbus) TcpAccept() (socket int, err error) {
 	return int(code), nil
 }
 
-// NewTCPPi modbus_new_tcp_pi - create a libmodbus context for TCP Protocol Independent
+// NewTCPPI modbus_new_tcp_pi - create a libmodbus context for TCP Protocol Independent
 //
 // The modbus_new_tcp_pi() function shall allocate and initialize a modbus_t structure to communicate with a Modbus TCP
 // IPv4 or IPv6 server.
@@ -89,7 +88,7 @@ func (x *Modbus) TcpAccept() (socket int, err error) {
 // The service argument is the service name/port number to connect to. To use the default Modbus port, you can provide
 // an NULL value or the string "502". On many Unix systems, it's convenient to use a port number greater than or equal
 // to 1024 because it's not necessary to have administrator privileges.
-func NewTCPPi(node string, service string) (*Modbus, error) {
+func NewTCPPI(node string, service string) (*Modbus, error) {
 	cnode := C.CString(node)
 	defer C.free(unsafe.Pointer(cnode))
 	cservice := C.CString(service)
@@ -99,16 +98,16 @@ func NewTCPPi(node string, service string) (*Modbus, error) {
 		return nil, newCError()
 	}
 	m := &Modbus{ctx: ctx}
-	runtime.SetFinalizer(m, (*Modbus).Destroy)
+	m.cleanup = runtime.AddCleanup(m, freeModbus, ctx)
 	return m, nil
 }
 
-// TcpPiListen modbus_tcp_pi_listen - create and listen a TCP PI Modbus socket (IPv6)
+// TCPPIListen modbus_tcp_pi_listen - create and listen a TCP PI Modbus socket (IPv6)
 //
 // The modbus_tcp_pi_listen() function shall create a socket and listen to maximum nb_connection incoming connections
 // on the specified nodes. The context ctx must be allocated and initialized with modbus_new_tcp_pi before to set the
 // node to listen, if node is set to NULL or '0.0.0.0', any addresses will be listen.
-func (x *Modbus) TcpPiListen(nb int) (socket int, err error) {
+func (x *Modbus) TCPPIListen(nb int) (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -118,17 +117,16 @@ func (x *Modbus) TcpPiListen(nb int) (socket int, err error) {
 	if code < 0 {
 		return 0, newCError()
 	}
-	socket = int(code)
-	x.socket = socket
-	return socket, nil
+	x.socket = int(code)
+	return int(code), nil
 }
 
-// TcpPiAccept modbus_tcp_pi_accept - accept a new connection on a TCP PI Modbus socket (IPv6)
+// TCPPIAccept modbus_tcp_pi_accept - accept a new connection on a TCP PI Modbus socket (IPv6)
 //
 // The modbus_tcp_pi_accept() function shall extract the first connection on the queue of pending connections, create a
 // new socket and store it in libmodbus context given in argument. If available, accept4() with SOCK_CLOEXEC will be
 // called instead of accept().
-func (x *Modbus) TcpPiAccept() (err error) {
+func (x *Modbus) TCPPIAccept() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {

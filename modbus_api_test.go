@@ -44,13 +44,13 @@ func setup(outChan chan struct{}, errChan chan error, port int) {
 		return
 	}
 	defer mbMapping.Free()
-	_, err = ctx.TcpListen(1)
+	_, err = ctx.TCPListen(1)
 	if err != nil {
 		errChan <- err
 		return
 	}
 	outChan <- struct{}{}
-	_, err = ctx.TcpAccept()
+	_, err = ctx.TCPAccept()
 	if err != nil {
 		errChan <- err
 		return

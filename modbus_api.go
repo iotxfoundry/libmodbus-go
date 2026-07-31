@@ -9,6 +9,7 @@ extern int get_errno_cgo();
 import "C"
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"iter"
@@ -52,7 +53,7 @@ func newCError() error {
 //
 // The broadcast address is MODBUS_BROADCAST_ADDRESS. This special value must be use when
 // you want all Modbus devices of the network receive the request.
-func (x *Modbus) SetSlave(slave int) (err error) {
+func (x *Modbus) SetSlave(slave int) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -68,7 +69,7 @@ func (x *Modbus) SetSlave(slave int) (err error) {
 // GetSlave modbus_get_slave - get slave number in the context
 //
 // The modbus_get_slave() function shall get the slave number in the libmodbus context.
-func (x *Modbus) GetSlave() (slave int, err error) {
+func (x *Modbus) GetSlave() (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -105,7 +106,7 @@ func (x *Modbus) GetSlave() (slave int, err error) {
 // The modes are mask values and so they are complementary.
 //
 // It's not recommended to enable error recovery for a Modbus slave/server.
-func (x *Modbus) SetErrorRecovery(errorRecovery ErrorRecoveryMode) (err error) {
+func (x *Modbus) SetErrorRecovery(errorRecovery ErrorRecoveryMode) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -122,7 +123,7 @@ func (x *Modbus) SetErrorRecovery(errorRecovery ErrorRecoveryMode) (err error) {
 //
 // The modbus_connect() function shall establish a connection to a Modbus server, a network or a bus
 // using the context information of libmodbus context given in argument.
-func (x *Modbus) Connect() (err error) {
+func (x *Modbus) Connect() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -140,7 +141,7 @@ func (x *Modbus) Connect() (err error) {
 //
 // The modbus_set_socket() function shall set the socket or file descriptor in the libmodbus context.
 // This function is useful for managing multiple client connections to the same server.
-func (x *Modbus) SetSocket(s int) (err error) {
+func (x *Modbus) SetSocket(s int) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -156,7 +157,7 @@ func (x *Modbus) SetSocket(s int) (err error) {
 // GetSocket modbus_get_socket - get the current socket of the context
 //
 // The modbus_get_socket() function shall return the current socket or file descriptor of the libmodbus context.
-func (x *Modbus) GetSocket() (s int, err error) {
+func (x *Modbus) GetSocket() (int, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -177,7 +178,7 @@ func (x *Modbus) GetSocket() (s int, err error) {
 // the full confirmation response must be received before expiration of the response timeout.
 //
 // The value of to_usec argument must be in the range 0 to 999999.
-func (x *Modbus) SetResponseTimeout(timeout time.Duration) (err error) {
+func (x *Modbus) SetResponseTimeout(timeout time.Duration) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -226,7 +227,7 @@ func (x *Modbus) GetResponseTimeout() (timeout time.Duration, err error) {
 // modbus_set_response_timeout() governs the entire handling of the response, the full confirmation
 // response must be received before expiration of the response timeout. When a byte timeout is set,
 // the response timeout is only used to wait for until the first byte of the response.
-func (x *Modbus) SetByteTimeout(timeout time.Duration) (err error) {
+func (x *Modbus) SetByteTimeout(timeout time.Duration) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -271,7 +272,7 @@ func (x *Modbus) GetByteTimeout() (timeout time.Duration, err error) {
 //
 // If both to_sec and to_usec are zero, this timeout will not be used at all. In this case,
 // the server will wait forever.
-func (x *Modbus) SetIndicationTimeout(timeout time.Duration) (err error) {
+func (x *Modbus) SetIndicationTimeout(timeout time.Duration) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -327,7 +328,7 @@ func (x *Modbus) GetHeaderLength() (length int) {
 
 // Free modbus_free - free a libmodbus context
 //
-// The modbus_free() function shall free an allocated modbus_t structure.
+// The Free() function shall close the connection and free an allocated modbus_t structure.
 // It is safe to call Free multiple times.
 func (x *Modbus) Free() {
 	x.mu.Lock()
@@ -336,9 +337,11 @@ func (x *Modbus) Free() {
 		return
 	}
 	mapSetRtsCallback.Delete(unsafe.Pointer(x.ctx))
+	C.modbus_close(x.ctx)
 	C.modbus_free(x.ctx)
 	x.ctx = nil
-	runtime.SetFinalizer(x, nil)
+	x.closed = true
+	x.cleanup.Stop()
 }
 
 // Close modbus_close - close a Modbus connection
@@ -356,19 +359,11 @@ func (x *Modbus) Close() error {
 	return nil
 }
 
-// Destroy releases all resources: closes the connection and frees the context.
-// It is safe to call Destroy multiple times.
-// This is the recommended way to clean up a Modbus instance.
-func (x *Modbus) Destroy() {
-	_ = x.Close()
-	x.Free()
-}
-
 // Flush modbus_flush - flush non-transmitted data
 //
 // The modbus_flush() function shall discard data received but not read to the socket or file descriptor associated
 // to the context 'ctx'.
-func (x *Modbus) Flush() (err error) {
+func (x *Modbus) Flush() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -386,7 +381,7 @@ func (x *Modbus) Flush() (err error) {
 // The modbus_set_debug() function shall set the debug flag of the modbus_t context by using the argument flag.
 // By default, the boolean flag is set to FALSE. When the flag value is set to TRUE, many verbose messages are
 // displayed on stdout and stderr. For example, this flag is useful to display the bytes of the Modbus messages.
-func (x *Modbus) SetDebug(flag bool) (err error) {
+func (x *Modbus) SetDebug(flag bool) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -502,7 +497,7 @@ func (x *Modbus) ReadInputRegisters(addr int, nb int) (out []uint16, err error) 
 // must be set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x05 (force single coil).
-func (x *Modbus) WriteBit(addr int, status bool) (err error) {
+func (x *Modbus) WriteBit(addr int, status bool) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -525,7 +520,7 @@ func (x *Modbus) WriteBit(addr int, status bool) (err error) {
 // remote device.
 //
 // The function uses the Modbus function code 0x06 (preset single register).
-func (x *Modbus) WriteRegister(addr int, value uint16) (err error) {
+func (x *Modbus) WriteRegister(addr int, value uint16) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -544,7 +539,7 @@ func (x *Modbus) WriteRegister(addr int, value uint16) (err error) {
 // remote device. The src array must contains bytes set to TRUE or FALSE.
 //
 // The function uses the Modbus function code 0x0F (force multiple coils).
-func (x *Modbus) WriteBits(addr int, data []byte) (err error) {
+func (x *Modbus) WriteBits(addr int, data []byte) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -565,7 +560,7 @@ func (x *Modbus) WriteBits(addr int, data []byte) (err error) {
 // address addr of the remote device.
 //
 // The function uses the Modbus function code 0x10 (preset multiple registers).
-func (x *Modbus) WriteRegisters(addr int, data []uint16) (err error) {
+func (x *Modbus) WriteRegisters(addr int, data []uint16) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -588,7 +583,7 @@ func (x *Modbus) WriteRegisters(addr int, data []uint16) (err error) {
 // new value = (current value AND 'and') OR ('or' AND (NOT 'and'))
 //
 // The function uses the Modbus function code 0x16 (mask single register).
-func (x *Modbus) MaskWriteRegister(addr int, andMask uint16, orMask uint16) (err error) {
+func (x *Modbus) MaskWriteRegister(addr int, andMask uint16, orMask uint16) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -661,7 +656,7 @@ func (x *Modbus) ReportSlaveID() (dest *SlaveIDReport, err error) {
 	}
 	buff := cUint8ToBytes(cdest[:code:code])
 	dest = &SlaveIDReport{
-		SlaveId:            buff[0],
+		SlaveID:            buff[0],
 		RunIndicatorStatus: buff[1],
 		AdditionalData:     buff[2:],
 	}
@@ -709,7 +704,7 @@ func NewMappingWithStart(
 		return nil, newCError()
 	}
 	mm := &ModbusMapping{mb: mn}
-	runtime.SetFinalizer(mm, (*ModbusMapping).Free)
+	mm.cleanup = runtime.AddCleanup(mm, freeMapping, mn)
 	return mm, nil
 }
 
@@ -730,7 +725,7 @@ func NewMapping(nbBits int, nbInputBits int, nbRegisters int, nbInputRegisters i
 		return nil, newCError()
 	}
 	mm := &ModbusMapping{mb: mn}
-	runtime.SetFinalizer(mm, (*ModbusMapping).Free)
+	mm.cleanup = runtime.AddCleanup(mm, freeMapping, mn)
 	return mm, nil
 }
 
@@ -777,6 +772,7 @@ func (mm *ModbusMapping) UnmarshalJSON(data []byte) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	if mm.mb != nil {
+		mm.cleanup.Stop()
 		C.modbus_mapping_free(mm.mb)
 		mm.mb = nil
 	}
@@ -794,7 +790,7 @@ func (mm *ModbusMapping) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("modbus: new mapping error")
 	}
 	mm.mb = mn
-	runtime.SetFinalizer(mm, (*ModbusMapping).Free)
+	mm.cleanup = runtime.AddCleanup(mm, freeMapping, mn)
 	for k, v := range mp.Bits {
 		tab := unsafe.Slice(mm.mb.tab_bits, int(mm.mb.nb_bits))
 		tab[k] = C.uint8_t(v)
@@ -1128,7 +1124,7 @@ func (mm *ModbusMapping) Free() {
 	}
 	C.modbus_mapping_free(mm.mb)
 	mm.mb = nil
-	runtime.SetFinalizer(mm, nil)
+	mm.cleanup.Stop()
 }
 
 // SendRawRequest modbus_send_raw_request - send a raw request
@@ -1140,7 +1136,7 @@ func (mm *ModbusMapping) Free() {
 //
 // The public header of libmodbus provides a list of supported Modbus functions codes, prefixed by MODBUS_FC_ (eg.
 // MODBUS_FC_READ_HOLDING_REGISTERS), to help build of raw requests.
-func (x *Modbus) SendRawRequest(raw []byte) (err error) {
+func (x *Modbus) SendRawRequest(raw []byte) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1154,8 +1150,8 @@ func (x *Modbus) SendRawRequest(raw []byte) (err error) {
 	return nil
 }
 
-// SendRawRequestTid sends a raw request with a specific transaction ID.
-func (x *Modbus) SendRawRequestTid(raw []byte, tid int) (err error) {
+// SendRawRequestTID sends a raw request with a specific transaction ID.
+func (x *Modbus) SendRawRequestTID(raw []byte, tid int) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1176,19 +1172,37 @@ func (x *Modbus) SendRawRequestTid(raw []byte, tid int) (err error) {
 //
 // If you need to use another socket or file descriptor than the one defined in the context ctx, see the function
 // modbus_set_socket.
-func (x *Modbus) Receive() (req []byte, err error) {
+func (x *Modbus) Receive() ([]byte, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
 		return nil, err
 	}
+	return x.receiveLocked()
+}
+
+// ReceiveContext is Receive with context support.
+//
+// When ctx is canceled, the underlying socket is shut down to unblock the pending receive and ctx.Err() is
+// returned. Note that this closes the connection of the context; call Connect again to reuse it. Cancellation
+// only takes effect for socket (TCP) contexts; a serial (RTU) context blocked in a read may not unblock.
+func (x *Modbus) ReceiveContext(ctx context.Context) ([]byte, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
+	return x.awaitCtx(ctx, x.receiveLocked)
+}
+
+// receiveLocked implements modbus_receive. Callers must hold x.mu.
+func (x *Modbus) receiveLocked() ([]byte, error) {
 	recv := make([]C.uint8_t, MODBUS_MAX_ADU_LENGTH)
 	code := C.modbus_receive(x.ctx, unsafe.SliceData(recv))
 	if code < 0 {
 		return nil, newCError()
 	}
-	req = cUint8ToBytes(recv[:code:code])
-	return req, nil
+	return cUint8ToBytes(recv[:code:code]), nil
 }
 
 // ReceiveConfirmation modbus_receive_confirmation - receive a confirmation request
@@ -1201,19 +1215,71 @@ func (x *Modbus) Receive() (req []byte, err error) {
 // bytes and in TCP it must be MODBUS_TCP_MAX_ADU_LENGTH bytes. If you want to write code compatible with both, you can
 // use the constant MODBUS_MAX_ADU_LENGTH (maximum value of all libmodbus backends). Take care to allocate enough
 // memory to store responses to avoid crashes of your server.
-func (x *Modbus) ReceiveConfirmation() (rsp []byte, err error) {
+func (x *Modbus) ReceiveConfirmation() ([]byte, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
 		return nil, err
 	}
+	return x.receiveConfirmationLocked()
+}
+
+// ReceiveConfirmationContext is ReceiveConfirmation with context support.
+//
+// See ReceiveContext for cancellation semantics.
+func (x *Modbus) ReceiveConfirmationContext(ctx context.Context) ([]byte, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return nil, err
+	}
+	return x.awaitCtx(ctx, x.receiveConfirmationLocked)
+}
+
+// receiveConfirmationLocked implements modbus_receive_confirmation. Callers must hold x.mu.
+func (x *Modbus) receiveConfirmationLocked() ([]byte, error) {
 	recv := make([]C.uint8_t, MODBUS_MAX_ADU_LENGTH)
 	code := C.modbus_receive_confirmation(x.ctx, unsafe.SliceData(recv))
 	if code < 0 {
 		return nil, newCError()
 	}
-	rsp = cUint8ToBytes(recv[:code:code])
-	return rsp, nil
+	return cUint8ToBytes(recv[:code:code]), nil
+}
+
+// awaitCtx runs the blocking receive function recv and aborts it via a socket shutdown when ctx is done.
+// Callers must hold x.mu; the lock is retained for the entire blocking call so that no other method can use
+// this context concurrently.
+func (x *Modbus) awaitCtx(ctx context.Context, recv func() ([]byte, error)) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	fd := int(C.modbus_get_socket(x.ctx))
+	type awaitResult struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan awaitResult, 1)
+	go func() {
+		data, err := recv()
+		ch <- awaitResult{data, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.data, r.err
+	case <-ctx.Done():
+		if fd >= 0 {
+			shutdownSocket(fd)
+		}
+		// Wait for the in-flight C call to unwind before returning, so that no
+		// goroutine keeps using the C context after the caller proceeds.
+		// For non-socket contexts (e.g. RTU serial ports) shutdownSocket has no
+		// effect, so bound the wait to avoid deadlocking while holding x.mu.
+		select {
+		case <-ch:
+		case <-time.After(200 * time.Millisecond):
+		}
+		return nil, ctx.Err()
+	}
 }
 
 // Lock ordering: Modbus.mu must be acquired before ModbusMapping.mu.
@@ -1228,7 +1294,7 @@ func (x *Modbus) ReceiveConfirmation() (rsp []byte, err error) {
 // If an error occurs, an exception response will be sent.
 //
 // This function is designed for Modbus servers.
-func (x *Modbus) Reply(req []byte, mm *ModbusMapping) (err error) {
+func (x *Modbus) Reply(req []byte, mm *ModbusMapping) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1247,7 +1313,7 @@ func (x *Modbus) Reply(req []byte, mm *ModbusMapping) (err error) {
 // ReplyException modbus_reply_exception - send an exception response
 //
 // The modbus_reply_exception() function shall send an exception response based on the 'exception_code' in argument.
-func (x *Modbus) ReplyException(req []byte, ecode uint) (err error) {
+func (x *Modbus) ReplyException(req []byte, ecode uint) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1268,7 +1334,7 @@ func (x *Modbus) ReplyException(req []byte, ecode uint) (err error) {
 // for Modbus gateways or proxies.
 //
 // Both the frontend (receiver) and backend contexts must be connected before calling this function.
-func (x *Modbus) Proxy(backend *Modbus, req []byte) (err error) {
+func (x *Modbus) Proxy(backend *Modbus, req []byte) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1288,7 +1354,7 @@ func (x *Modbus) Proxy(backend *Modbus, req []byte) (err error) {
 }
 
 // EnableQuirks modbus_enable_quirks - enable a list of quirks according to a mask
-func (x *Modbus) EnableQuirks(quirksMask Quirks) (err error) {
+func (x *Modbus) EnableQuirks(quirksMask Quirks) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1302,7 +1368,7 @@ func (x *Modbus) EnableQuirks(quirksMask Quirks) (err error) {
 }
 
 // DisableQuirks modbus_disable_quirks - disable a list of quirks according to a mask
-func (x *Modbus) DisableQuirks(quirksMask Quirks) (err error) {
+func (x *Modbus) DisableQuirks(quirksMask Quirks) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if err := x.ensureCtx(); err != nil {
@@ -1327,17 +1393,18 @@ func GetLowByte[T int16 | uint16 | int32 | uint32 | int64 | uint64](data T) byte
 
 // GetInt64FromInt16 converts 4 int16 values to int64 (big-endian).
 func GetInt64FromInt16(tab []int16) int64 {
-	return int64(tab[0])<<48 | int64(tab[1])<<32 | int64(tab[2])<<16 | int64(tab[3])
+	return int64(uint64(uint16(tab[0]))<<48 | uint64(uint16(tab[1]))<<32 |
+		uint64(uint16(tab[2]))<<16 | uint64(uint16(tab[3])))
 }
 
 // GetInt32FromInt16 converts 2 int16 values to int32 (big-endian).
 func GetInt32FromInt16(tab []int16) int32 {
-	return int32(tab[0])<<16 | int32(tab[1])
+	return int32(uint32(uint16(tab[0]))<<16 | uint32(uint16(tab[1])))
 }
 
 // GetInt16FromInt8 converts 2 int8 values to int16 (big-endian).
 func GetInt16FromInt8(tab []int8) int16 {
-	return int16(tab[0])<<8 | int16(tab[1])
+	return int16(uint16(uint8(tab[0]))<<8 | uint16(uint8(tab[1])))
 }
 
 // SetInt16ToInt8 converts an int16 to 2 int8 values (big-endian).

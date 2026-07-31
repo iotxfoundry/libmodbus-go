@@ -1,6 +1,7 @@
 package modbus
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -74,6 +75,13 @@ func (s *TCPServer) SetSlaveID(id int) {
 // Serve starts the TCP server. It blocks until Close is called or a fatal
 // accept error occurs.
 func (s *TCPServer) Serve() error {
+	return s.ServeContext(context.Background())
+}
+
+// ServeContext starts the TCP server. It blocks until ctx is canceled, Close
+// is called, or a fatal accept error occurs. When ctx is canceled, in-flight
+// client connections are closed and ServeContext returns ctx.Err().
+func (s *TCPServer) ServeContext(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return fmt.Errorf("modbus: tcp server listen %s: %w", s.addr, err)
@@ -84,12 +92,27 @@ func (s *TCPServer) Serve() error {
 
 	s.sem = make(chan struct{}, s.maxClients)
 
+	// Unblock Accept when ctx is canceled, the server is closed, or
+	// ServeContext returns (e.g. fatal accept error).
+	serveDone := make(chan struct{})
+	defer close(serveDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			ln.Close()
+		case <-s.done:
+		case <-serveDone:
+		}
+	}()
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			select {
 			case <-s.done:
 				return nil
+			case <-ctx.Done():
+				return ctx.Err()
 			default:
 				return fmt.Errorf("modbus: tcp server accept: %w", err)
 			}
@@ -99,7 +122,7 @@ func (s *TCPServer) Serve() error {
 		select {
 		case s.sem <- struct{}{}:
 			s.wg.Add(1)
-			go s.handleConn(conn)
+			go s.handleConn(ctx, conn)
 		default:
 			conn.Close()
 		}
@@ -133,8 +156,9 @@ func (s *TCPServer) Close() error {
 
 // handleConn manages a single client connection. It dup's the TCP fd into
 // blocking mode, creates a per-connection C libmodbus context, and runs a
-// receive/reply loop until the client disconnects or an error occurs.
-func (s *TCPServer) handleConn(conn net.Conn) (err error) {
+// receive/reply loop until the client disconnects, ctx is canceled, or an
+// error occurs.
+func (s *TCPServer) handleConn(ctx context.Context, conn net.Conn) (err error) {
 	defer s.wg.Done()
 	defer func() { <-s.sem }()
 
@@ -162,6 +186,21 @@ func (s *TCPServer) handleConn(conn net.Conn) (err error) {
 	s.files[dupFd] = file
 	s.mu.Unlock()
 
+	// Close the connection's fd when ctx is canceled to unblock the C receive.
+	connDone := make(chan struct{})
+	defer close(connDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			if f, ok := s.files[dupFd]; ok {
+				f.Close()
+			}
+			s.mu.Unlock()
+		case <-connDone:
+		}
+	}()
+
 	defer func() {
 		s.mu.Lock()
 		delete(s.files, dupFd)
@@ -173,23 +212,23 @@ func (s *TCPServer) handleConn(conn net.Conn) (err error) {
 	}()
 
 	// Create a per-connection C libmodbus context.
-	ctx, err := NewTCP("0.0.0.0", 0)
+	mb, err := NewTCP("0.0.0.0", 0)
 	if err != nil {
 		return fmt.Errorf("modbus: new tcp context: %w", err)
 	}
-	defer ctx.Free()
+	defer mb.Free()
 
 	if s.debug {
-		ctx.SetDebug(true)
+		mb.SetDebug(true)
 	}
 
 	if s.slaveID >= 0 {
-		if err := ctx.SetSlave(s.slaveID); err != nil {
+		if err := mb.SetSlave(s.slaveID); err != nil {
 			return fmt.Errorf("modbus: set slave: %w", err)
 		}
 	}
 
-	if err := ctx.SetSocket(dupFd); err != nil {
+	if err := mb.SetSocket(dupFd); err != nil {
 		return fmt.Errorf("modbus: set socket: %w", err)
 	}
 
@@ -199,12 +238,12 @@ func (s *TCPServer) handleConn(conn net.Conn) (err error) {
 
 	// Receive/Reply loop.
 	for {
-		req, recvErr := ctx.Receive()
+		req, recvErr := mb.Receive()
 		if recvErr != nil {
 			err = recvErr
 			return
 		}
-		replyErr := ctx.Reply(req, s.mapping)
+		replyErr := mb.Reply(req, s.mapping)
 		if replyErr != nil {
 			if s.debug {
 				log.Printf("modbus: reply error: %s", replyErr)

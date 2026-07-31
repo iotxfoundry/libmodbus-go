@@ -4,6 +4,7 @@ package modbus
 #include "modbus.h"
 */
 import "C"
+import "weak"
 
 const (
 	// MODBUS_RTU_MAX_ADU_LENGTH Modbus_Application_Protocol_V1_1b.pdf Chapter 4 Section 1 Page 5
@@ -25,7 +26,10 @@ const (
 // RTSFunc is the callback type for custom RTS pin control in RTU mode.
 type RTSFunc func(ctx *Modbus, on int)
 
+// rtsEntry holds a weak reference to the Modbus context so that registering a
+// custom RTS callback does not prevent the context from being garbage
+// collected.
 type rtsEntry struct {
-	mb *Modbus
+	mb weak.Pointer[Modbus]
 	fn RTSFunc
 }
