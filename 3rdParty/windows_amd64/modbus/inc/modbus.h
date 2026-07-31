@@ -276,6 +276,11 @@ MODBUS_API int modbus_reply(modbus_t *ctx,
                             modbus_mapping_t *mb_mapping);
 MODBUS_API int
 modbus_reply_exception(modbus_t *ctx, const uint8_t *req, unsigned int exception_code);
+MODBUS_API int modbus_proxy(modbus_t *frontend_ctx,
+                            modbus_t *backend_ctx,
+                            const uint8_t *req,
+                            int req_length);
+
 MODBUS_API int modbus_enable_quirks(modbus_t *ctx, unsigned int quirks_mask);
 MODBUS_API int modbus_disable_quirks(modbus_t *ctx, unsigned int quirks_mask);
 
@@ -285,13 +290,20 @@ MODBUS_API int modbus_disable_quirks(modbus_t *ctx, unsigned int quirks_mask);
 
 #define MODBUS_GET_HIGH_BYTE(data) (((data) >> 8) & 0xFF)
 #define MODBUS_GET_LOW_BYTE(data)  ((data) & 0xFF)
-#define MODBUS_GET_INT64_FROM_INT16(tab_int16, index)                                  \
-    (((int64_t) tab_int16[(index)] << 48) | ((int64_t) tab_int16[(index) + 1] << 32) | \
-     ((int64_t) tab_int16[(index) + 2] << 16) | (int64_t) tab_int16[(index) + 3])
-#define MODBUS_GET_INT32_FROM_INT16(tab_int16, index) \
-    (((int32_t) tab_int16[(index)] << 16) | (int32_t) tab_int16[(index) + 1])
-#define MODBUS_GET_INT16_FROM_INT8(tab_int8, index) \
-    (((int16_t) tab_int8[(index)] << 8) | (int16_t) tab_int8[(index) + 1])
+/* The shifts are done in unsigned width and the result converted to the signed
+   type: shifting a (possibly negative or overflowing) signed value is undefined
+   behavior. The produced value is unchanged on two's-complement platforms. */
+#define MODBUS_GET_INT64_FROM_INT16(tab_int16, index)               \
+    ((int64_t) (((uint64_t) (uint16_t) tab_int16[(index)] << 48) |  \
+                ((uint64_t) (uint16_t) tab_int16[(index) + 1] << 32) | \
+                ((uint64_t) (uint16_t) tab_int16[(index) + 2] << 16) | \
+                (uint64_t) (uint16_t) tab_int16[(index) + 3]))
+#define MODBUS_GET_INT32_FROM_INT16(tab_int16, index)              \
+    ((int32_t) (((uint32_t) (uint16_t) tab_int16[(index)] << 16) | \
+                (uint32_t) (uint16_t) tab_int16[(index) + 1]))
+#define MODBUS_GET_INT16_FROM_INT8(tab_int8, index)             \
+    ((int16_t) (((uint16_t) (uint8_t) tab_int8[(index)] << 8) | \
+                (uint16_t) (uint8_t) tab_int8[(index) + 1]))
 #define MODBUS_SET_INT16_TO_INT8(tab_int8, index, value)            \
     do {                                                            \
         ((int8_t *) (tab_int8))[(index)] = (int8_t) ((value) >> 8); \

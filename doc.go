@@ -29,6 +29,7 @@
 //	| modbus_new_rtu()                   | NewRTU()                        |
 //	| modbus_new_tcp()                   | NewTCP()                        |
 //	| modbus_new_tcp_pi()                | NewTCPPi()                      |
+//	| modbus_proxy()                     | Modbus.Proxy()                  |
 //	| modbus_read_bits()                 | Modbus.ReadBits()               |
 //	| modbus_read_input_bits()           | Modbus.ReadInputBits()          |
 //	| modbus_read_input_registers()      | Modbus.ReadInputRegisters()     |
@@ -46,6 +47,7 @@
 //	| modbus_rtu_set_rts_delay()         | Modbus.RtuSetRtsDelay()         |
 //	| modbus_rtu_set_serial_mode()       | Modbus.RtuSetSerialMode()       |
 //	| modbus_send_raw_request()          | Modbus.SendRawRequest()         |
+//	| modbus_send_raw_request_tid()      | Modbus.SendRawRequestTid()      |
 //	| modbus_set_bits_from_byte()        | SetBitsFromByte()               |
 //	| modbus_set_bits_from_bytes()       | SetBitsFromBytes()              |
 //	| modbus_set_byte_timeout()          | Modbus.SetByteTimeout()         |

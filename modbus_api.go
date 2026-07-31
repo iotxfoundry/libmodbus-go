@@ -1261,6 +1261,32 @@ func (x *Modbus) ReplyException(req []byte, ecode uint) (err error) {
 	return nil
 }
 
+// Proxy modbus_proxy - forward a request from a frontend to a backend
+//
+// The modbus_proxy() function shall forward the request req received on the frontend context to the backend
+// context. The response from the backend is sent back through the frontend context. This function is designed
+// for Modbus gateways or proxies.
+//
+// Both the frontend (receiver) and backend contexts must be connected before calling this function.
+func (x *Modbus) Proxy(backend *Modbus, req []byte) (err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.ensureCtx(); err != nil {
+		return err
+	}
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if err := backend.ensureCtx(); err != nil {
+		return err
+	}
+	raw := bytesToCUint8(req)
+	code := C.modbus_proxy(x.ctx, backend.ctx, unsafe.SliceData(raw), C.int(len(req)))
+	if code < 0 {
+		return newCError()
+	}
+	return nil
+}
+
 // EnableQuirks modbus_enable_quirks - enable a list of quirks according to a mask
 func (x *Modbus) EnableQuirks(quirksMask Quirks) (err error) {
 	x.mu.Lock()

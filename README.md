@@ -3,12 +3,12 @@
 [![Go Version](http://img.shields.io/github/go-mod/go-version/iotxfoundry/libmodbus-go)][gomod]
 [![GitHub release](http://img.shields.io/github/release/iotxfoundry/libmodbus-go.svg?style=flat-square)][release]
 [![LGPL-2.1 license](https://img.shields.io/badge/license-LGPL2.1-blue?style=flat-square)][license]
-[![libmodbus version](https://img.shields.io/badge/libmodbus-v3.1.11-blue)][libmodbus]
+[![libmodbus version](https://img.shields.io/badge/libmodbus-v3.2.0-blue)][libmodbus]
 
 [gomod]: https://github.com/iotxfoundry/libmodbus-go/blob/main/go.md
 [release]: https://github.com/iotxfoundry/libmodbus-go/releases
 [license]: https://github.com/iotxfoundry/libmodbus-go/blob/main/LICENSE
-[libmodbus]: https://github.com/stephane/libmodbus/releases/tag/v3.1.11
+[libmodbus]: https://github.com/stephane/libmodbus/releases/tag/v3.2.0
 
 golang binding for libmodbus
 
@@ -41,6 +41,7 @@ golang binding for libmodbus
 | modbus_new_rtu()                   | ModbusNewRtu()                  |         |
 | modbus_new_tcp()                   | ModbusNewTcp()                  |         |
 | modbus_new_tcp_pi()                | ModbusNewTcpPi()                |         |
+| modbus_proxy()                     | Modbus.Proxy()                  |         |
 | modbus_read_bits()                 | Modbus.ReadBits()               |         |
 | modbus_read_input_bits()           | Modbus.ReadInputBits()          |         |
 | modbus_read_input_registers()      | Modbus.ReadInputRegisters()     |         |
@@ -58,6 +59,7 @@ golang binding for libmodbus
 | modbus_rtu_set_rts_delay()         | Modbus.RtuSetRtsDelay()         |         |
 | modbus_rtu_set_serial_mode()       | Modbus.RtuSetSerialMode()       |         |
 | modbus_send_raw_request()          | Modbus.SendRawRequest()         |         |
+| modbus_send_raw_request_tid()      | Modbus.SendRawRequestTid()      |         |
 | modbus_set_bits_from_byte()        | ModbusSetBitsFromByte()         |         |
 | modbus_set_bits_from_bytes()       | ModbusSetBitsFromBytes()        |         |
 | modbus_set_byte_timeout()          | Modbus.SetByteTimeout()         |         |
