@@ -145,6 +145,9 @@ func (s *TCPServer) Close() error {
 		err = s.listener.Close()
 	}
 	for fd, file := range s.files {
+		// shutdown 唤醒阻塞在同一 fd 上的 C 层 recv (close 不会唤醒阻塞读),
+		// 使 handleConn 立即退出, Close 的 wg.Wait 不必等对端下一拍请求.
+		_ = shutdownSocket(fd)
 		file.Close()
 		delete(s.files, fd)
 	}
@@ -186,7 +189,8 @@ func (s *TCPServer) handleConn(ctx context.Context, conn net.Conn) (err error) {
 	s.files[dupFd] = file
 	s.mu.Unlock()
 
-	// Close the connection's fd when ctx is canceled to unblock the C receive.
+	// Shutdown the connection's fd when ctx is canceled to unblock the C receive.
+	// close(2) 不会唤醒阻塞在 recv 上的读线程, 必须 shutdown(2) 才能立即解除阻塞.
 	connDone := make(chan struct{})
 	defer close(connDone)
 	go func() {
@@ -194,6 +198,7 @@ func (s *TCPServer) handleConn(ctx context.Context, conn net.Conn) (err error) {
 		case <-ctx.Done():
 			s.mu.Lock()
 			if f, ok := s.files[dupFd]; ok {
+				_ = shutdownSocket(dupFd)
 				f.Close()
 			}
 			s.mu.Unlock()
@@ -205,6 +210,7 @@ func (s *TCPServer) handleConn(ctx context.Context, conn net.Conn) (err error) {
 		s.mu.Lock()
 		delete(s.files, dupFd)
 		s.mu.Unlock()
+		_ = shutdownSocket(dupFd)
 		file.Close()
 		if s.onDisconnect != nil {
 			s.onDisconnect(remoteAddr, err)
